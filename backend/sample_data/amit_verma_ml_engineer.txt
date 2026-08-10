@@ -1,0 +1,24 @@
+AMIT VERMA
+Machine Learning Engineer | Pune, India
+amit.verma@example.com | +91 90123 45678
+
+SUMMARY
+ML Engineer with 3 years of experience productionising models. Owns pipelines
+end to end: feature engineering, training, deployment and drift monitoring.
+
+SKILLS
+Python, Machine Learning, Scikit-learn, Pandas, NumPy, XGBoost, PyTorch,
+MLflow, Airflow, Docker, Kubernetes, SQL, AWS SageMaker, Model Monitoring, CI/CD
+
+EXPERIENCE
+Machine Learning Engineer — FinEdge Analytics (2022 - Present)
+- Built a churn prediction model (AUC 0.87) served to 400k users daily.
+- Automated retraining with Airflow; reduced manual effort by 12 hours/week.
+- Instrumented drift detection that caught a feature-skew incident within 2 hours.
+
+Data Analyst — FinEdge Analytics (2021 - 2022)
+- Built SQL reporting pipelines and executive dashboards.
+
+EDUCATION
+M.Sc. in Data Science, Symbiosis Pune (2019 - 2021)
+B.Sc. in Statistics, Fergusson College (2016 - 2019)

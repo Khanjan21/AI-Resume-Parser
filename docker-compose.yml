@@ -1,0 +1,60 @@
+services:
+  postgres:
+    # pgvector-enabled image so Day 4 can optionally store embeddings in Postgres
+    image: pgvector/pgvector:pg16
+    container_name: resume_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-resume}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-resume}
+      POSTGRES_DB: ${POSTGRES_DB:-resume_screening}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-resume} -d ${POSTGRES_DB:-resume_screening}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Vector store — used from Day 4 (semantic matching) onward.
+  # Started only with: docker compose --profile vector up -d
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    container_name: resume_qdrant
+    restart: unless-stopped
+    profiles: ["vector"]
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: resume_backend
+    restart: unless-stopped
+    profiles: ["full"]
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-resume}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-resume}
+      POSTGRES_DB: ${POSTGRES_DB:-resume_screening}
+      STORAGE_DIR: /app/storage
+      RUN_MIGRATIONS_ON_STARTUP: "true"
+    ports:
+      - "8000:8000"
+    volumes:
+      - resume_storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  qdrant_data:
+  resume_storage:

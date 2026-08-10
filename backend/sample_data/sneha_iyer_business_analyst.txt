@@ -1,0 +1,26 @@
+SNEHA IYER
+Business Analyst | Mumbai, India
+sneha.iyer@example.com | +91 77665 44332
+
+SUMMARY
+Business Analyst with 6 years bridging business stakeholders and delivery teams
+in banking and insurance. Strong in requirement elicitation and process redesign.
+
+SKILLS
+Requirement Gathering, Stakeholder Management, SQL, Excel, Power BI, Tableau,
+Agile, Scrum, JIRA, Confluence, Process Mapping, Gap Analysis, User Stories,
+BRD, FRD, UAT, Documentation, Communication
+
+EXPERIENCE
+Senior Business Analyst — Meridian Insurance (2021 - Present)
+- Led requirement gathering for a claims platform used by 1,200 staff.
+- Mapped current-state processes and removed 3 redundant approval steps,
+  cutting average claim turnaround from 9 days to 5.
+- Authored BRDs and user stories; coordinated UAT across 4 business units.
+
+Business Analyst — Kotak Financial Services (2018 - 2021)
+- Built Power BI dashboards tracking 18 operational KPIs.
+
+EDUCATION
+MBA in Finance, NMIMS Mumbai (2016 - 2018)
+B.Com, University of Mumbai (2013 - 2016)

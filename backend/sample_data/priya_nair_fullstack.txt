@@ -1,0 +1,23 @@
+PRIYA NAIR
+Full Stack Developer | Kochi, India
+priya.nair@example.com | +91 88990 11223
+
+SUMMARY
+Full stack developer with 5 years building customer-facing products in React
+and Node.js. Comfortable owning a feature from Figma handoff to production.
+
+SKILLS
+JavaScript, TypeScript, React, Next.js, Redux, Node.js, Express, HTML, CSS,
+Tailwind CSS, PostgreSQL, MongoDB, REST API, GraphQL, Docker, AWS, Jest, Git
+
+EXPERIENCE
+Senior Full Stack Developer — Brightline Commerce (2022 - Present)
+- Rebuilt the checkout flow in Next.js, improving conversion by 11%.
+- Designed the order-service REST API and its PostgreSQL schema.
+- Introduced Jest and Cypress coverage across critical paths.
+
+Full Stack Developer — Webcraft Solutions (2019 - 2022)
+- Delivered 14 client projects across React, Express and MongoDB.
+
+EDUCATION
+B.Tech in Information Technology, CUSAT (2015 - 2019)

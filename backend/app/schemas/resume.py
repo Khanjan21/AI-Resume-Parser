@@ -1,0 +1,66 @@
+"""Resume request/response models."""
+
+from __future__ import annotations
+
+import uuid
+from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict
+
+from app.models.enums import AnalysisStatus, ParseStatus, UploadSource
+
+
+class ResumeRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    job_role_id: uuid.UUID | None
+    batch_id: uuid.UUID | None
+    candidate_id: uuid.UUID | None
+    upload_source: UploadSource
+
+    original_filename: str
+    file_extension: str
+    content_type: str
+    file_size_bytes: int
+    content_hash: str
+
+    parse_status: ParseStatus
+    parse_error: str | None
+    analysis_status: AnalysisStatus
+    word_count: int | None
+    page_count: int | None
+
+    created_at: datetime
+    updated_at: datetime
+
+
+class ResumeUploadResponse(BaseModel):
+    """Result of a single-file candidate upload."""
+
+    resume: ResumeRead
+    duplicate: bool = False
+    message: str
+
+
+class BulkUploadItem(BaseModel):
+    """Per-file outcome inside a recruiter bulk upload.
+
+    A rejected file never aborts the rest of the batch — the recruiter gets a
+    row-level report instead of an all-or-nothing error.
+    """
+
+    filename: str
+    status: str  # "uploaded" | "duplicate" | "rejected"
+    resume_id: uuid.UUID | None = None
+    error_code: str | None = None
+    error: str | None = None
+
+
+class BulkUploadResponse(BaseModel):
+    batch_id: uuid.UUID
+    received: int
+    uploaded: int
+    duplicates: int
+    rejected: int
+    items: list[BulkUploadItem]

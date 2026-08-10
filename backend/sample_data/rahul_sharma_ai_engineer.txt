@@ -1,0 +1,31 @@
+RAHUL SHARMA
+AI Engineer | Bengaluru, India
+rahul.sharma@example.com | +91 98765 43210
+linkedin.com/in/rahulsharma-ai | github.com/rahulsharma
+
+SUMMARY
+AI Engineer with 4 years of experience building production LLM applications.
+Shipped retrieval-augmented generation systems serving 2M+ monthly queries with
+p95 latency under 800ms. Strong background in Python, PyTorch and vector search.
+
+SKILLS
+Languages: Python, SQL, TypeScript
+AI/ML: Large Language Models, Prompt Engineering, RAG, Embeddings, Fine-tuning,
+       LoRA, PyTorch, Hugging Face Transformers, Model Evaluation
+Infrastructure: FastAPI, Docker, Kubernetes, AWS, PostgreSQL, Redis
+Vector Search: FAISS, Qdrant, Pinecone, LangChain, LlamaIndex
+
+EXPERIENCE
+Senior AI Engineer — Nexora Labs (2023 - Present)
+- Designed a RAG pipeline over 4M internal documents using BGE embeddings and
+  Qdrant, lifting answer relevance from 0.61 to 0.84 NDCG@10.
+- Built an offline evaluation harness (precision, recall, NDCG@K) that gated
+  every prompt change before release.
+- Cut inference cost 38% through prompt compression and semantic caching.
+
+AI Engineer — Datastack Systems (2021 - 2023)
+- Built document-extraction services with FastAPI and Docker on AWS.
+- Fine-tuned transformer models for domain classification (F1 0.91).
+
+EDUCATION
+B.Tech in Computer Science, VIT Vellore (2017 - 2021)

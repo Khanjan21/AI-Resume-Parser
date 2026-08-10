@@ -1,0 +1,491 @@
+[
+  {
+    "slug": "ai-engineer",
+    "title": "AI Engineer",
+    "category": "engineering",
+    "summary": "Builds and ships LLM-powered applications: RAG systems, agents, evaluation harnesses and the serving infrastructure around them.",
+    "description": "An AI Engineer designs, builds and operates production systems on top of foundation models. The role spans prompt and context engineering, retrieval-augmented generation, embedding and vector-store design, agent/tool orchestration, evaluation and guardrails, plus the API and deployment layer that exposes these capabilities to users. Strong candidates show end-to-end ownership: they have taken an LLM feature from prototype to production with measurable quality metrics, latency budgets and cost controls.",
+    "default_level": "mid",
+    "min_experience_years": 2.0,
+    "max_experience_years": 8.0,
+    "required_skills": [
+      "Python",
+      "Large Language Models",
+      "Prompt Engineering",
+      "RAG",
+      "Vector Databases",
+      "Embeddings",
+      "LangChain",
+      "FastAPI",
+      "REST API",
+      "Git",
+      "Docker"
+    ],
+    "preferred_skills": [
+      "PyTorch",
+      "Hugging Face Transformers",
+      "LlamaIndex",
+      "FAISS",
+      "Qdrant",
+      "Pinecone",
+      "OpenAI API",
+      "Anthropic API",
+      "Fine-tuning",
+      "LoRA",
+      "Model Evaluation",
+      "PostgreSQL",
+      "Redis",
+      "Kubernetes",
+      "AWS"
+    ],
+    "nice_to_have_skills": [
+      "vLLM",
+      "Ray",
+      "Triton Inference Server",
+      "LangGraph",
+      "Guardrails",
+      "MLflow",
+      "Weights & Biases",
+      "GraphRAG",
+      "Multimodal Models",
+      "Quantization"
+    ],
+    "responsibilities": [
+      "Design and ship retrieval-augmented generation pipelines over proprietary data",
+      "Engineer prompts, tools and agent workflows for reliability at scale",
+      "Build evaluation harnesses and offline/online quality metrics for LLM features",
+      "Optimise inference latency, throughput and token cost",
+      "Expose model capabilities through well-tested backend APIs",
+      "Collaborate with product and data teams to define AI feature requirements"
+    ],
+    "education": [
+      "Bachelor's in Computer Science, Artificial Intelligence or related field",
+      "Master's in AI/ML (preferred)"
+    ],
+    "ats_keywords": [
+      "LLM",
+      "GPT",
+      "Claude",
+      "transformer",
+      "retrieval augmented generation",
+      "semantic search",
+      "cosine similarity",
+      "agent",
+      "tool calling",
+      "context window",
+      "tokenizer",
+      "inference",
+      "evaluation",
+      "hallucination",
+      "guardrail",
+      "vector index"
+    ],
+    "scoring_weights": {
+      "ats": 0.15,
+      "required_skills": 0.35,
+      "semantic": 0.3,
+      "experience": 0.2
+    }
+  },
+  {
+    "slug": "ml-engineer",
+    "title": "Machine Learning Engineer",
+    "category": "engineering",
+    "summary": "Trains, deploys and monitors machine learning models in production, owning the pipeline from features to serving.",
+    "description": "A Machine Learning Engineer turns models into reliable production services. The role covers feature engineering, model training and validation, experiment tracking, reproducible pipelines, model packaging and serving, plus monitoring for drift and degradation. Strong candidates combine solid ML fundamentals with software engineering discipline: versioned data, tested code, automated retraining and clear performance baselines.",
+    "default_level": "mid",
+    "min_experience_years": 2.0,
+    "max_experience_years": 10.0,
+    "required_skills": [
+      "Python",
+      "Machine Learning",
+      "Scikit-learn",
+      "Pandas",
+      "NumPy",
+      "Model Deployment",
+      "SQL",
+      "Git",
+      "Docker",
+      "MLOps"
+    ],
+    "preferred_skills": [
+      "PyTorch",
+      "TensorFlow",
+      "MLflow",
+      "Airflow",
+      "Kubernetes",
+      "AWS SageMaker",
+      "Feature Engineering",
+      "XGBoost",
+      "LightGBM",
+      "Model Monitoring",
+      "CI/CD",
+      "Spark",
+      "Kubeflow"
+    ],
+    "nice_to_have_skills": [
+      "Ray",
+      "DVC",
+      "Weights & Biases",
+      "ONNX",
+      "TensorRT",
+      "Feature Store",
+      "A/B Testing",
+      "Databricks",
+      "Deep Learning",
+      "Computer Vision",
+      "NLP"
+    ],
+    "responsibilities": [
+      "Build and maintain reproducible training pipelines",
+      "Engineer features and manage datasets at scale",
+      "Deploy models as low-latency services with automated rollback",
+      "Track experiments and maintain performance baselines",
+      "Monitor production models for drift, skew and degradation",
+      "Partner with data scientists to productionise research prototypes"
+    ],
+    "education": [
+      "Bachelor's in Computer Science, Statistics, Mathematics or related field",
+      "Master's in Machine Learning or Data Science (preferred)"
+    ],
+    "ats_keywords": [
+      "model training",
+      "cross validation",
+      "hyperparameter tuning",
+      "precision",
+      "recall",
+      "F1",
+      "AUC",
+      "pipeline",
+      "batch inference",
+      "real-time inference",
+      "drift",
+      "retraining",
+      "experiment tracking",
+      "feature store"
+    ],
+    "scoring_weights": {
+      "ats": 0.15,
+      "required_skills": 0.35,
+      "semantic": 0.25,
+      "experience": 0.25
+    }
+  },
+  {
+    "slug": "python-developer",
+    "title": "Python Developer",
+    "category": "engineering",
+    "summary": "Builds backend services, APIs and automation in Python with an emphasis on clean, tested, maintainable code.",
+    "description": "A Python Developer designs and implements server-side applications: REST APIs, background workers, integrations and data-processing jobs. The role demands fluency in the Python ecosystem, relational database design, testing practice and version control workflow. Strong candidates show ownership of production services, comfort with debugging and profiling, and a track record of readable code that other engineers can extend.",
+    "default_level": "mid",
+    "min_experience_years": 1.0,
+    "max_experience_years": 8.0,
+    "required_skills": [
+      "Python",
+      "REST API",
+      "SQL",
+      "Git",
+      "Unit Testing",
+      "OOP",
+      "Data Structures"
+    ],
+    "preferred_skills": [
+      "FastAPI",
+      "Django",
+      "Flask",
+      "PostgreSQL",
+      "MySQL",
+      "Docker",
+      "Redis",
+      "Celery",
+      "SQLAlchemy",
+      "Pytest",
+      "Linux",
+      "CI/CD",
+      "AWS"
+    ],
+    "nice_to_have_skills": [
+      "Async Programming",
+      "GraphQL",
+      "RabbitMQ",
+      "Kafka",
+      "MongoDB",
+      "Nginx",
+      "Pydantic",
+      "Web Scraping",
+      "Pandas",
+      "Microservices"
+    ],
+    "responsibilities": [
+      "Design and implement RESTful backend services",
+      "Model and query relational databases efficiently",
+      "Write unit and integration tests for critical paths",
+      "Review code and uphold engineering standards",
+      "Debug, profile and optimise production issues",
+      "Automate recurring workflows and data jobs"
+    ],
+    "education": [
+      "Bachelor's in Computer Science, Information Technology or related field"
+    ],
+    "ats_keywords": [
+      "backend",
+      "API endpoint",
+      "ORM",
+      "migration",
+      "authentication",
+      "middleware",
+      "caching",
+      "queue",
+      "deployment",
+      "test coverage",
+      "refactoring",
+      "code review"
+    ],
+    "scoring_weights": {
+      "ats": 0.2,
+      "required_skills": 0.35,
+      "semantic": 0.2,
+      "experience": 0.25
+    }
+  },
+  {
+    "slug": "full-stack-developer",
+    "title": "Full Stack Developer",
+    "category": "engineering",
+    "summary": "Owns features end to end across the browser, the API layer and the database.",
+    "description": "A Full Stack Developer delivers complete product features: responsive user interfaces, the backend APIs behind them and the data model underneath. The role spans modern JavaScript/TypeScript frameworks, server-side development, database design, authentication, and deployment. Strong candidates demonstrate breadth without shallowness — they can reason about render performance and query plans in the same day.",
+    "default_level": "mid",
+    "min_experience_years": 2.0,
+    "max_experience_years": 10.0,
+    "required_skills": [
+      "JavaScript",
+      "React",
+      "HTML",
+      "CSS",
+      "REST API",
+      "SQL",
+      "Git",
+      "Node.js"
+    ],
+    "preferred_skills": [
+      "TypeScript",
+      "Next.js",
+      "Express",
+      "PostgreSQL",
+      "MongoDB",
+      "Docker",
+      "Redux",
+      "Tailwind CSS",
+      "Authentication",
+      "AWS",
+      "CI/CD",
+      "Jest",
+      "Responsive Design"
+    ],
+    "nice_to_have_skills": [
+      "GraphQL",
+      "WebSockets",
+      "Redis",
+      "Kubernetes",
+      "Vue.js",
+      "Python",
+      "Django",
+      "Microservices",
+      "Cypress",
+      "Figma",
+      "Accessibility"
+    ],
+    "responsibilities": [
+      "Build responsive, accessible user interfaces",
+      "Design and implement backend APIs and data models",
+      "Integrate third-party services and authentication providers",
+      "Write automated tests across the stack",
+      "Deploy and monitor features in production",
+      "Collaborate with designers on UX implementation"
+    ],
+    "education": [
+      "Bachelor's in Computer Science, Software Engineering or related field"
+    ],
+    "ats_keywords": [
+      "frontend",
+      "backend",
+      "component",
+      "state management",
+      "responsive",
+      "single page application",
+      "JWT",
+      "OAuth",
+      "CRUD",
+      "schema",
+      "deployment",
+      "cross-browser"
+    ],
+    "scoring_weights": {
+      "ats": 0.2,
+      "required_skills": 0.35,
+      "semantic": 0.2,
+      "experience": 0.25
+    }
+  },
+  {
+    "slug": "data-scientist",
+    "title": "Data Scientist",
+    "category": "data",
+    "summary": "Turns data into decisions through statistical analysis, experimentation and predictive modelling.",
+    "description": "A Data Scientist frames business problems as analytical questions, builds the datasets to answer them, and communicates findings that change decisions. The role covers exploratory analysis, statistical inference, experiment design, predictive modelling and visualisation. Strong candidates pair technical depth in statistics and Python/SQL with the communication skill to make stakeholders act on a result.",
+    "default_level": "mid",
+    "min_experience_years": 1.0,
+    "max_experience_years": 10.0,
+    "required_skills": [
+      "Python",
+      "SQL",
+      "Statistics",
+      "Pandas",
+      "NumPy",
+      "Data Visualization",
+      "Machine Learning",
+      "Exploratory Data Analysis"
+    ],
+    "preferred_skills": [
+      "Scikit-learn",
+      "Matplotlib",
+      "Seaborn",
+      "Jupyter",
+      "A/B Testing",
+      "Hypothesis Testing",
+      "Regression",
+      "Classification",
+      "Clustering",
+      "Tableau",
+      "Power BI",
+      "R",
+      "Feature Engineering"
+    ],
+    "nice_to_have_skills": [
+      "Deep Learning",
+      "PyTorch",
+      "TensorFlow",
+      "Time Series",
+      "NLP",
+      "Spark",
+      "Airflow",
+      "Bayesian Statistics",
+      "Causal Inference",
+      "Snowflake",
+      "dbt",
+      "Storytelling"
+    ],
+    "responsibilities": [
+      "Perform exploratory analysis to surface patterns and opportunities",
+      "Design and evaluate experiments and A/B tests",
+      "Build predictive models and validate them rigorously",
+      "Create dashboards and visualisations for stakeholders",
+      "Translate business questions into analytical frameworks",
+      "Present findings and recommendations to non-technical audiences"
+    ],
+    "education": [
+      "Bachelor's in Statistics, Mathematics, Computer Science, Economics or related field",
+      "Master's or PhD in a quantitative discipline (preferred)"
+    ],
+    "ats_keywords": [
+      "statistical significance",
+      "p-value",
+      "confidence interval",
+      "correlation",
+      "regression",
+      "segmentation",
+      "cohort analysis",
+      "dashboard",
+      "KPI",
+      "forecast",
+      "insight",
+      "data cleaning",
+      "hypothesis"
+    ],
+    "scoring_weights": {
+      "ats": 0.15,
+      "required_skills": 0.35,
+      "semantic": 0.25,
+      "experience": 0.25
+    }
+  },
+  {
+    "slug": "business-analyst",
+    "title": "Business Analyst",
+    "category": "business",
+    "summary": "Bridges business needs and technical delivery through requirements, analysis and stakeholder alignment.",
+    "description": "A Business Analyst elicits and documents requirements, analyses processes and data, and keeps stakeholders and delivery teams aligned. The role covers requirement gathering, process mapping, gap analysis, reporting, and support for UAT and rollout. Strong candidates combine analytical rigour in SQL and spreadsheets with the communication and facilitation skills to drive consensus across teams.",
+    "default_level": "mid",
+    "min_experience_years": 1.0,
+    "max_experience_years": 12.0,
+    "required_skills": [
+      "Requirement Gathering",
+      "SQL",
+      "Excel",
+      "Data Analysis",
+      "Stakeholder Management",
+      "Documentation",
+      "Communication"
+    ],
+    "preferred_skills": [
+      "Power BI",
+      "Tableau",
+      "Agile",
+      "Scrum",
+      "JIRA",
+      "Process Mapping",
+      "Gap Analysis",
+      "User Stories",
+      "BRD",
+      "FRD",
+      "UAT",
+      "Business Process Modelling",
+      "Confluence"
+    ],
+    "nice_to_have_skills": [
+      "Python",
+      "SAP",
+      "Salesforce",
+      "Visio",
+      "Six Sigma",
+      "Financial Modelling",
+      "Product Management",
+      "Change Management",
+      "Risk Analysis",
+      "Google Analytics"
+    ],
+    "responsibilities": [
+      "Elicit, document and prioritise business requirements",
+      "Map current-state processes and identify improvement opportunities",
+      "Build reports and dashboards that track business KPIs",
+      "Facilitate workshops and align cross-functional stakeholders",
+      "Write user stories and acceptance criteria for delivery teams",
+      "Coordinate user acceptance testing and rollout"
+    ],
+    "education": [
+      "Bachelor's in Business Administration, Commerce, Economics, IT or related field",
+      "MBA (preferred)"
+    ],
+    "ats_keywords": [
+      "requirements",
+      "stakeholder",
+      "workflow",
+      "business case",
+      "process improvement",
+      "KPI",
+      "reporting",
+      "user story",
+      "acceptance criteria",
+      "gap analysis",
+      "sprint",
+      "backlog",
+      "documentation"
+    ],
+    "scoring_weights": {
+      "ats": 0.25,
+      "required_skills": 0.3,
+      "semantic": 0.2,
+      "experience": 0.25
+    }
+  }
+]
