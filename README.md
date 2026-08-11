@@ -17,13 +17,14 @@ An AI-powered platform with two flows:
 | Database | PostgreSQL 16 (`pgvector` image, ready for Day 4) |
 | Migrations | Alembic (async env) |
 | Vector store | Qdrant (Day 4, `--profile vector`) |
+| LLM | Groq (Llama 3.3 70B), forced tool-calling for structured extraction |
 | Deployment | Docker + Docker Compose |
 
 ---
 
-## Status — Day 1 complete
+## Status — Day 2 complete
 
-Day 1 delivers the foundation the rest of the build sits on.
+**Day 1** — foundation: job-role catalogue, database, upload pipeline.
 
 - [x] Project scaffold, settings, structured error handling, logging
 - [x] Database schema + async Alembic migrations (5 tables)
@@ -32,11 +33,26 @@ Day 1 delivers the foundation the rest of the build sits on.
 - [x] File validation (extension + magic bytes), size limits, SHA-256 de-duplication
 - [x] Local storage with date sharding and path-traversal protection
 - [x] React frontend for both flows
-- [x] 70 passing tests against a real Postgres
 
-**Verified end to end**: 6 roles seeded, uploads stored and de-duplicated, bad files
-rejected with row-level reporting, downloads byte-identical to the original, and
-the containerised stack (`--profile full`) migrating and serving on boot.
+**Day 2** — resume and job-description parsing.
+
+- [x] Local text extraction: PDF (`pypdf`), DOCX (`python-docx`), TXT/MD
+- [x] LLM structured extraction via Groq, forced tool-calling against a Pydantic
+      JSON schema (nested objects via `$defs` — no plain "JSON mode" guessing)
+- [x] Provider-agnostic `LLMProvider` interface — swapping Groq for another
+      provider later touches one factory function, not every call site
+- [x] Parsing orchestration: text extraction always runs; the LLM step is queued
+      as a `BackgroundTask` so uploads return immediately
+- [x] Candidate creation/linking from parsed contact info, refreshed on re-parse
+- [x] Job-description endpoints: create from pasted text or an uploaded file,
+      list, get, manual re-parse
+- [x] Manual re-parse endpoints for both resumes and job descriptions
+
+**Verified end to end against the real Groq API**: a plain-text resume, a
+hand-rolled genuinely-valid PDF, a real-world PDF from earlier manual testing,
+and a pasted job description all parsed correctly — skills, experience,
+education, and a linked `Candidate` row, all in one pass. Bulk upload parses
+every file in a batch independently.
 
 | Candidate flow | Recruiter flow |
 | --- | --- |
@@ -47,7 +63,7 @@ the containerised stack (`--profile full`) migrating and serving on boot.
 | Day | Scope |
 | --- | --- |
 | 1 | Foundation, job roles, database, APIs, resume uploads ✅ |
-| 2 | Resume + job-description parsing (PDF/DOCX text, LLM structured extraction) |
+| 2 | Resume + job-description parsing (PDF/DOCX text, LLM structured extraction) ✅ |
 | 3 | ATS scoring |
 | 4 | Semantic matching (BGE/E5 embeddings) + skill matching |
 | 5 | Candidate ranking and shortlist categories |
@@ -71,6 +87,12 @@ cp .env.example .env
 > **Port note.** The Postgres container publishes on host port **5433**, not 5432, so
 > it never collides with a locally installed Postgres. Change `POSTGRES_PORT` in
 > `.env` if you prefer another port.
+
+> **LLM parsing (optional but recommended).** Get a free key at
+> [console.groq.com](https://console.groq.com) → API Keys, then set
+> `GROQ_API_KEY` in `.env`. Without it, uploads still work — text extraction and
+> storage happen normally — but the structured-extraction step is skipped
+> rather than failed, and `parse_status` stays `pending`.
 
 ### 2. Database
 
@@ -116,8 +138,9 @@ cd backend
 python scripts/make_sample_resumes.py     # writes backend/sample_data/
 ```
 
-Produces four realistic resumes, a DOCX, and one file whose extension lies about
-its contents — handy for exercising the rejection path.
+Produces four realistic resumes as plain text, one as DOCX, one as a genuinely
+valid hand-rolled PDF, and one file whose extension lies about its contents —
+handy for exercising both the parsing path and the rejection path.
 
 ### Run everything in Docker
 
@@ -139,12 +162,18 @@ production. A `resume_screening_test` database is created and dropped per run;
 your dev data is never touched.
 
 ```
-70 passed
+107 passed
 ```
 
 Coverage: filename sanitisation, magic-byte sniffing, size limits, storage
 round-trips and traversal guards, job-role CRUD, candidate upload + de-duplication,
-recruiter bulk upload (partial-failure reporting), batch lifecycle, health probes.
+recruiter bulk upload (partial-failure reporting), batch lifecycle, health probes,
+text extraction (PDF/DOCX/TXT/MD, including a genuinely valid hand-rolled PDF
+fixture), parsing orchestration (success/failure paths, candidate linking,
+re-parse idempotency), job-description creation and parsing.
+
+No test ever calls the real Groq API — a `FakeLLMProvider` fixture stands in for
+it, so the suite runs offline and free. See "Design notes" below for how.
 
 ---
 
@@ -164,10 +193,11 @@ Base path: `/api/v1`
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `POST` | `/resumes` | Upload one resume (`job_role_id` + `file`, multipart) |
+| `POST` | `/resumes` | Upload one resume (`job_role_id` + `file`, multipart) — queues parsing |
 | `GET` | `/resumes` | List/filter by role, batch, source, parse status |
-| `GET` | `/resumes/{id}` | Resume record |
+| `GET` | `/resumes/{id}` | Resume record, including `parsed_data` once parsed |
 | `GET` | `/resumes/{id}/download` | Original file |
+| `POST` | `/resumes/{id}/parse` | Re-run text extraction + structured parsing |
 | `DELETE` | `/resumes/{id}` | Delete the record and its stored file |
 
 ### Recruiter flow
@@ -177,8 +207,20 @@ Base path: `/api/v1`
 | `POST` | `/batches` | Create a screening batch for a role |
 | `GET` | `/batches` | List batches (filter by role or status) |
 | `GET` | `/batches/{id}` | Batch with its resumes and role |
-| `POST` | `/batches/{id}/resumes` | Bulk-upload (multipart `files`, up to 50) |
+| `POST` | `/batches/{id}/resumes` | Bulk-upload (multipart `files`, up to 50) — queues parsing for each |
 | `DELETE` | `/batches/{id}` | Delete the batch and everything in it |
+
+### Job descriptions
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/job-descriptions` | Create from pasted text **or** an uploaded file (exactly one) |
+| `GET` | `/job-descriptions` | List/filter by role or parse status |
+| `GET` | `/job-descriptions/{id}` | Detail, including `raw_text` and `parsed_data` |
+| `POST` | `/job-descriptions/{id}/parse` | Re-run structured extraction |
+
+Job-description files aren't kept — only the text extracted from them — so
+there's no matching `/download` route.
 
 ### Error format
 
@@ -242,6 +284,34 @@ swapped for S3/GCS without touching the API layer.
 1.0 — a Business Analyst weights ATS keywords more heavily than an AI Engineer,
 whose semantic fit matters more. A test enforces the normalisation.
 
+**Parsing is forced tool-calling, not "JSON mode."** `ParsedResumeData` and
+`ParsedJobDescriptionData` (in `app/schemas/`) are plain Pydantic models.
+`model_json_schema()` on each becomes a Groq tool definition, and `tool_choice`
+is forced to that exact tool — the model has no path to return prose instead of
+structured data, and nested objects (experience entries, education entries) come
+back correctly via `$defs` without any manual JSON-schema wrangling. The same
+class then validates the response before it's persisted.
+
+**The LLM sits behind an interface, like storage does.** `app/services/llm/`
+defines `LLMProvider` (one method: text + a schema in, a validated model out)
+and `get_llm_provider()` as the only way callers obtain one. `GroqProvider` is
+the only implementation today; adding Ollama or Gemini later is a new class and
+a one-line change to the factory, not a rewrite of the parsing service.
+
+**Parsing runs as a `BackgroundTask`, not inline.** Uploading a resume returns
+immediately with `parse_status: "pending"`; the LLM call happens after the
+response is sent. `parse_resume`/`parse_job_description` open their own database
+session rather than reusing the request's, since by the time a background task
+runs, the request that queued it has already closed its own session. Bulk
+uploads queue one task per successfully-ingested file — a rejected or duplicate
+file is never queued.
+
+**Tests never touch the real Groq API.** A `FakeLLMProvider` fixture
+(`tests/conftest.py`) replaces `get_llm_provider()` for every test that goes
+through the API layer, returning an empty-but-valid model by default or
+whatever a test sets on `.response`/`.error`. This is also what makes the suite
+safe to run without a `GROQ_API_KEY` at all.
+
 ---
 
 ## Project layout
@@ -252,16 +322,22 @@ whose semantic fit matters more. A test enforces the normalisation.
 ├── .env.example
 ├── backend/
 │   ├── alembic/               # async migration env + versions
-│   ├── scripts/               # sample-resume generator
-│   ├── tests/                 # 70 tests against a real Postgres
+│   ├── scripts/               # sample-resume generator (incl. a hand-rolled valid PDF)
+│   ├── tests/                 # 107 tests against a real Postgres
 │   └── app/
-│       ├── api/v1/endpoints/  # health, job_roles, resumes, batches
+│       ├── api/v1/endpoints/  # health, job_roles, resumes, batches, job_descriptions
 │       ├── core/              # settings, logging, error handling
 │       ├── data/              # job_roles_seed.json
 │       ├── db/                # base, session, seeder
 │       ├── models/            # SQLAlchemy models + enums
-│       ├── schemas/           # Pydantic request/response models
-│       └── services/          # validation, storage, ingestion
+│       ├── schemas/           # Pydantic request/response + parsed-data models
+│       └── services/
+│           ├── llm/           # LLMProvider interface, GroqProvider, factory
+│           ├── text_extraction.py
+│           ├── parsing_service.py   # orchestrates extraction -> LLM -> persist
+│           ├── file_validation.py
+│           ├── storage.py
+│           └── resume_service.py
 └── frontend/
     └── src/
         ├── api/               # typed client + shared types
@@ -274,13 +350,13 @@ whose semantic fit matters more. A test enforces the normalisation.
 | Table | Role |
 | --- | --- |
 | `job_roles` | Catalogue of screenable positions, skills, ATS keywords, weights |
-| `job_descriptions` | Recruiter-supplied JDs, parsed on Day 2 |
-| `candidates` | People — populated by resume parsing |
-| `resumes` | Uploaded files, extraction state, scoring state |
+| `job_descriptions` | Recruiter-supplied JDs — `raw_text` + `parsed_data`, populated on creation |
+| `candidates` | People — created/refreshed by resume parsing |
+| `resumes` | Uploaded files — `raw_text` + `parsed_data` populated by parsing |
 | `screening_batches` | A recruiter's bulk run; groups resumes for ranking |
 
-Columns for later days (`raw_text`, `parsed_data`, `parse_status`,
-`analysis_status`) already exist, so Days 2–5 add logic rather than migrations.
+Columns for Days 3–5 (`analysis_status` and the scoring tables to come) already
+exist or are additive, so those days add logic rather than destructive migrations.
 
 ## Troubleshooting
 
@@ -294,3 +370,16 @@ changed it, change it back.
 
 **Job roles are empty** — run `alembic upgrade head`, then restart the API (seeding
 runs on startup) or run `python -m app.db.seed`.
+
+**A resume stays `pending` forever** — either `GROQ_API_KEY` isn't set (parsing is
+silently skipped, not failed — see the note under Quick Start), or the Groq
+free-tier rate limit was hit. Check `parse_error` on the resume once it's
+`failed`, or re-trigger with `POST /resumes/{id}/parse`.
+
+**Tests hang or fail at teardown with "Event loop is closed" (Windows only)** —
+a known bad interaction between Windows' default `ProactorEventLoop` and
+`asyncpg` when a fixture hands out a live DB connection the test body uses and
+then touches again during its own teardown. `tests/conftest.py` works around it
+by forcing the `SelectorEventLoop` policy and pinning `loop_scope="function"` on
+any fixture that yields a live session (`test_engine`, `session`, `parsing_env`,
+`client`). If you add a new fixture in that shape, give it the same treatment.

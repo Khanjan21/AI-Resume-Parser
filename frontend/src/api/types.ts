@@ -107,6 +107,20 @@ export interface Batch {
   updated_at: string
 }
 
+export interface JobDescription {
+  id: string
+  job_role_id: string | null
+  title: string
+  company: string | null
+  location: string | null
+  source_filename: string | null
+  parse_status: ParseStatus
+  parse_error: string | null
+  parsed_at: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface ApiErrorBody {
   error: {
     code: string

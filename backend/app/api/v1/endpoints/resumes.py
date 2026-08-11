@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, File, Form, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, File, Form, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 
@@ -14,13 +14,20 @@ from app.api.deps import (
     get_job_role_or_404,
     get_resume_or_404,
 )
+from app.core.config import settings
 from app.core.exceptions import NotFoundError
 from app.models.enums import ParseStatus, UploadSource
 from app.models.resume import Resume
 from app.schemas.common import MessageResponse, Page, PageMeta
 from app.schemas.resume import ResumeRead, ResumeUploadResponse
 from app.services import resume_service
+from app.services.parsing_service import parse_resume
 from app.services.storage import resume_storage
+
+
+def _queue_parse(background_tasks: BackgroundTasks, resume_id: uuid.UUID) -> None:
+    if settings.PARSE_ON_UPLOAD and settings.GROQ_API_KEY:
+        background_tasks.add_task(parse_resume, resume_id)
 
 router = APIRouter(prefix="/resumes", tags=["resumes"])
 
@@ -33,13 +40,14 @@ router = APIRouter(prefix="/resumes", tags=["resumes"])
 )
 async def upload_resume(
     session: DbSession,
+    background_tasks: BackgroundTasks,
     job_role_id: uuid.UUID = Form(..., description="Target job role"),
     file: UploadFile = File(..., description="PDF, DOCX, TXT or MD, max 10 MB"),
 ) -> ResumeUploadResponse:
     """Stores the file and queues it for parsing.
 
     Re-uploading the same bytes for the same role returns the existing record
-    instead of creating a second copy.
+    instead of creating a second copy (and is not re-queued for parsing).
     """
     await get_job_role_or_404(session, job_role_id)
 
@@ -52,6 +60,9 @@ async def upload_resume(
         )
     finally:
         await file.close()
+
+    if not duplicate:
+        _queue_parse(background_tasks, resume.id)
 
     return ResumeUploadResponse(
         resume=ResumeRead.model_validate(resume),
@@ -123,6 +134,29 @@ async def download_resume(resume_id: uuid.UUID, session: DbSession) -> FileRespo
         media_type=resume.content_type,
         filename=resume.original_filename,
     )
+
+
+@router.post(
+    "/{resume_id}/parse",
+    response_model=ResumeRead,
+    summary="(Re-)run text extraction and structured parsing on a resume",
+)
+async def reparse_resume(
+    resume_id: uuid.UUID,
+    session: DbSession,
+    background_tasks: BackgroundTasks,
+) -> ResumeRead:
+    resume = await get_resume_or_404(session, resume_id)
+    resume.parse_status = ParseStatus.PENDING
+    await session.flush()
+    # `updated_at` is server-computed (onupdate=func.now()); after an UPDATE,
+    # SQLAlchemy marks it expired rather than eagerly re-fetching it the way
+    # it does for INSERTs via RETURNING. Refresh before serializing or
+    # Pydantic's attribute access triggers an implicit lazy-load outside any
+    # awaited context, raising MissingGreenlet.
+    await session.refresh(resume)
+    background_tasks.add_task(parse_resume, resume.id)
+    return ResumeRead.model_validate(resume)
 
 
 @router.delete(

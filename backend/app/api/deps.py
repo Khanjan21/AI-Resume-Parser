@@ -16,6 +16,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import NotFoundError
 from app.db.session import get_db
+from app.models.job_description import JobDescription
 from app.models.job_role import JobRole
 from app.models.resume import Resume
 from app.models.screening_batch import ScreeningBatch
@@ -61,6 +62,15 @@ async def get_resume_or_404(session: AsyncSession, resume_id: uuid.UUID) -> Resu
     if resume is None:
         raise NotFoundError(f"Resume {resume_id} not found.")
     return resume
+
+
+async def get_job_description_or_404(
+    session: AsyncSession, job_description_id: uuid.UUID
+) -> JobDescription:
+    jd = await session.get(JobDescription, job_description_id)
+    if jd is None:
+        raise NotFoundError(f"Job description {job_description_id} not found.")
+    return jd
 
 
 async def get_batch_or_404(

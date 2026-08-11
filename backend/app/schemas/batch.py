@@ -14,6 +14,10 @@ from app.schemas.resume import ResumeRead
 
 class BatchCreate(BaseModel):
     job_role_id: uuid.UUID
+    job_description_id: uuid.UUID | None = Field(
+        default=None,
+        description="Optional specific JD to screen against, in addition to the role's generic vocabulary",
+    )
     name: str = Field(..., min_length=1, max_length=200)
     recruiter_email: EmailStr | None = None
     notes: str | None = Field(default=None, max_length=2000)

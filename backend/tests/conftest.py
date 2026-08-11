@@ -10,8 +10,18 @@ function-scoped, so no connection is ever shared across event loops.
 
 from __future__ import annotations
 
+import asyncio
+import sys
 from collections.abc import AsyncGenerator
 from pathlib import Path
+
+# Windows' default ProactorEventLoop has a known bad interaction with asyncpg
+# during teardown (IOCP handles torn down out of order -> "Event loop is
+# closed" / "'NoneType' object has no attribute 'send'" mid-rollback). The
+# Selector loop has none of Proactor's subprocess/pipe support, which these
+# tests never need, and doesn't hit this.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 import asyncpg
 import pytest
@@ -74,12 +84,22 @@ async def test_database() -> AsyncGenerator[None, None]:
         await conn.close()
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def test_engine(test_database):
     """A fresh engine bound to the running test's event loop.
 
     Wipes and re-seeds the schema first, so every test starts from the same
     known state: six system job roles and nothing else.
+
+    loop_scope="function" matters here: the ini default is "session", but any
+    fixture that hands out a *live* connection/session the test body will use
+    (this one, `session`, `parsing_env`) must run on the same loop as the test
+    body itself, or asyncpg's low-level transport — bound to whichever loop
+    was running when the connection was actually opened — mismatches the loop
+    driving the fixture's own teardown, surfacing as "Future attached to a
+    different loop" or a flat-out hang. `client` is exempt: its connections
+    are opened and fully discarded inside `override_get_db` during the test
+    body's own request cycle, never touched again by fixture teardown code.
     """
     engine = create_async_engine(TEST_DB_URL, poolclass=NullPool)
 
@@ -97,23 +117,100 @@ async def test_engine(test_database):
     await engine.dispose()
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def session(test_engine) -> AsyncGenerator[AsyncSession, None]:
+    """Committing on exit matters here: leaving an active (even read-only,
+    e.g. from a trailing `session.get`/`refresh`) transaction for `__aexit__`
+    to implicitly roll back races with event-loop teardown on Windows'
+    ProactorEventLoop and surfaces as 'Event loop is closed' at teardown."""
     factory = async_sessionmaker(bind=test_engine, expire_on_commit=False, autoflush=False)
     async with factory() as db:
-        yield db
+        try:
+            yield db
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            raise
 
 
-@pytest_asyncio.fixture
-async def client(test_engine, tmp_path, monkeypatch) -> AsyncGenerator[AsyncClient, None]:
-    """An HTTP client wired to the test DB and a throwaway storage root."""
+class FakeLLMProvider:
+    """Stands in for GroqProvider — no network call, no real API key needed.
+
+    `response` and `error` are None by default, meaning "succeed with an
+    empty-but-valid instance of whatever schema was requested." Tests that
+    care about the extracted content set `.response` before triggering the
+    parse; tests that care about failure handling set `.error`.
+    """
+
+    def __init__(self) -> None:
+        self.response = None
+        self.error: Exception | None = None
+        self.calls: list[dict] = []
+
+    async def extract(
+        self, *, system_prompt, user_content, response_model, tool_name, tool_description
+    ):
+        self.calls.append(
+            {
+                "system_prompt": system_prompt,
+                "user_content": user_content,
+                "tool_name": tool_name,
+            }
+        )
+        if self.error is not None:
+            raise self.error
+        if self.response is not None:
+            return self.response
+        return response_model()
+
+
+@pytest.fixture
+def fake_llm(monkeypatch) -> FakeLLMProvider:
+    """Replaces the real Groq provider everywhere parsing_service looks it up.
+
+    Also forces PARSE_ON_UPLOAD/GROQ_API_KEY on so upload endpoints queue the
+    background parse regardless of what the real .env happens to contain —
+    tests must not depend on local environment state.
+    """
+    provider = FakeLLMProvider()
+    monkeypatch.setattr("app.services.parsing_service.get_llm_provider", lambda: provider)
+    monkeypatch.setattr(settings, "GROQ_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "PARSE_ON_UPLOAD", True)
+    return provider
+
+
+@pytest_asyncio.fixture(loop_scope="function")
+async def parsing_env(test_engine, tmp_path, monkeypatch) -> LocalResumeStorage:
+    """Isolates `parsing_service` for tests that call it directly (no HTTP
+    layer) — same idea as `client`'s patches, without spinning up the app."""
+    factory = async_sessionmaker(bind=test_engine, expire_on_commit=False, autoflush=False)
+    monkeypatch.setattr("app.services.parsing_service.AsyncSessionLocal", factory)
+
+    storage = LocalResumeStorage(root=tmp_path / "resumes")
+    storage.ensure_ready()
+    monkeypatch.setattr("app.services.parsing_service.resume_storage", storage)
+    return storage
+
+
+@pytest_asyncio.fixture(loop_scope="function")
+async def client(
+    test_engine, tmp_path, monkeypatch, fake_llm: FakeLLMProvider
+) -> AsyncGenerator[AsyncClient, None]:
+    """An HTTP client wired to the test DB and a throwaway storage root.
+
+    Any background parse task a request queues must also land in the test DB
+    and test storage, never the real ones — `parsing_service` gets its own
+    copies of `AsyncSessionLocal` and `resume_storage` patched here.
+    """
     test_storage = LocalResumeStorage(root=tmp_path / "resumes")
     test_storage.ensure_ready()
     monkeypatch.setattr("app.services.storage.resume_storage", test_storage)
     monkeypatch.setattr("app.services.resume_service.resume_storage", test_storage)
     monkeypatch.setattr("app.api.v1.endpoints.resumes.resume_storage", test_storage)
+    monkeypatch.setattr("app.services.parsing_service.resume_storage", test_storage)
 
     factory = async_sessionmaker(bind=test_engine, expire_on_commit=False, autoflush=False)
+    monkeypatch.setattr("app.services.parsing_service.AsyncSessionLocal", factory)
 
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
         async with factory() as db:
@@ -153,6 +250,62 @@ def resume_txt() -> tuple[str, bytes, str]:
 
 @pytest.fixture
 def resume_pdf() -> tuple[str, bytes, str]:
-    """A byte string with a real PDF header — enough for upload validation."""
+    """A byte string with a real PDF header — enough for upload validation, but
+    with no page tree, so text extraction is expected to fail on this one."""
     body = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n%%EOF\n"
     return ("candidate.pdf", body, "application/pdf")
+
+
+def _escape_pdf_text(text: str) -> str:
+    return text.replace("\\", r"\\").replace("(", r"\(").replace(")", r"\)")
+
+
+def build_pdf_bytes(text: str) -> bytes:
+    """A genuinely valid single-page PDF containing `text`, byte-correct xref
+    included. Mirrors `scripts/make_sample_resumes.write_pdf` — kept as a
+    standalone duplicate so tests don't depend on the demo script."""
+    lines = [line for line in text.splitlines() if line.strip()][:55]
+    content_ops = ["BT", "/F1 11 Tf", "12 TL"]
+    y = 740
+    for line in lines:
+        content_ops.append(f"1 0 0 1 50 {y} Tm ({_escape_pdf_text(line)}) Tj")
+        y -= 13
+    content_ops.append("ET")
+    content_bytes = "\n".join(content_ops).encode("latin-1", errors="replace")
+
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> "
+        b"/MediaBox [0 0 612 792] /Contents 5 0 R >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        b"<< /Length " + str(len(content_bytes)).encode() + b" >>\nstream\n"
+        + content_bytes + b"\nendstream",
+    ]
+
+    buf = bytearray(b"%PDF-1.4\n")
+    offsets: list[int] = []
+    for index, obj in enumerate(objects, start=1):
+        offsets.append(len(buf))
+        buf += f"{index} 0 obj\n".encode()
+        buf += obj
+        buf += b"\nendobj\n"
+
+    xref_offset = len(buf)
+    count = len(objects) + 1
+    buf += f"xref\n0 {count}\n".encode()
+    buf += b"0000000000 65535 f \n"
+    for offset in offsets:
+        buf += f"{offset:010d} 00000 n \n".encode()
+    buf += (
+        f"trailer\n<< /Size {count} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF"
+    ).encode()
+    return bytes(buf)
+
+
+@pytest.fixture
+def real_pdf_bytes() -> bytes:
+    """A PDF that text_extraction can genuinely pull text out of."""
+    return build_pdf_bytes(
+        "JANE DOE\nData Scientist\njane.doe@example.com\nSkills: Python, SQL, Statistics"
+    )

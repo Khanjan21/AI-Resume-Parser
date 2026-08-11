@@ -4,8 +4,13 @@ import type { BulkUploadResponse, JobRoleSummary } from '../api/types'
 import FileDropzone from '../components/FileDropzone'
 import RolePicker from '../components/RolePicker'
 
+type JdMode = 'text' | 'file'
+
 export default function RecruiterPage() {
   const [role, setRole] = useState<JobRoleSummary | null>(null)
+  const [jdMode, setJdMode] = useState<JdMode>('text')
+  const [jdText, setJdText] = useState('')
+  const [jdFile, setJdFile] = useState<File[]>([])
   const [batchName, setBatchName] = useState('')
   const [email, setEmail] = useState('')
   const [files, setFiles] = useState<File[]>([])
@@ -13,6 +18,7 @@ export default function RecruiterPage() {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
+  const hasJd = jdMode === 'text' ? jdText.trim().length > 0 : jdFile.length > 0
   const canSubmit = role !== null && files.length > 0 && !submitting
 
   async function handleSubmit() {
@@ -23,10 +29,22 @@ export default function RecruiterPage() {
     setResult(null)
 
     try {
+      let jobDescriptionId: string | undefined
+
+      if (hasJd) {
+        const jd = await api.createJobDescription({
+          title: role.title,
+          job_role_id: role.id,
+          ...(jdMode === 'text' ? { raw_text: jdText.trim() } : { file: jdFile[0] }),
+        })
+        jobDescriptionId = jd.id
+      }
+
       const batch = await api.createBatch({
         job_role_id: role.id,
         name: batchName.trim() || `${role.title} screening`,
         ...(email.trim() ? { recruiter_email: email.trim() } : {}),
+        ...(jobDescriptionId ? { job_description_id: jobDescriptionId } : {}),
       })
       setResult(await api.uploadBatchResumes(batch.id, files))
     } catch (err) {
@@ -55,7 +73,54 @@ export default function RecruiterPage() {
 
       <section className="section">
         <div className="step-label">
-          <span className="step-label__num">2</span> Name this batch
+          <span className="step-label__num">2</span> Add the job description
+          <span className="muted" style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>
+            {' '}
+            (optional)
+          </span>
+        </div>
+        <div className="card">
+          <p className="muted" style={{ marginTop: 0, fontSize: '0.85rem' }}>
+            Paste the job posting or upload it as a file. This gets parsed and matched
+            against each candidate — without it, resumes are still screened against the
+            role's general skill vocabulary.
+          </p>
+
+          <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.9rem' }}>
+            <button
+              type="button"
+              className={jdMode === 'text' ? 'btn' : 'btn btn--ghost'}
+              onClick={() => setJdMode('text')}
+            >
+              Paste text
+            </button>
+            <button
+              type="button"
+              className={jdMode === 'file' ? 'btn' : 'btn btn--ghost'}
+              onClick={() => setJdMode('file')}
+            >
+              Upload a file
+            </button>
+          </div>
+
+          {jdMode === 'text' ? (
+            <textarea
+              className="input"
+              rows={6}
+              style={{ resize: 'vertical', fontFamily: 'inherit' }}
+              value={jdText}
+              placeholder="Paste the full job description here…"
+              onChange={(event) => setJdText(event.target.value)}
+            />
+          ) : (
+            <FileDropzone files={jdFile} onChange={setJdFile} />
+          )}
+        </div>
+      </section>
+
+      <section className="section">
+        <div className="step-label">
+          <span className="step-label__num">3</span> Name this batch
         </div>
         <div className="card">
           <div className="field">
@@ -84,7 +149,7 @@ export default function RecruiterPage() {
 
       <section className="section">
         <div className="step-label">
-          <span className="step-label__num">3</span> Upload resumes
+          <span className="step-label__num">4</span> Upload resumes
         </div>
         <FileDropzone multiple files={files} onChange={setFiles} />
       </section>
@@ -147,7 +212,8 @@ export default function RecruiterPage() {
               </table>
             </div>
             <p className="muted" style={{ marginTop: '0.9rem', marginBottom: 0 }}>
-              Batch <code>{result.batch_id.slice(0, 8)}…</code> is queued. Ranking and
+              Batch <code>{result.batch_id.slice(0, 8)}…</code> is queued
+              {hasJd ? ', linked to the job description you provided' : ''}. Ranking and
               shortlisting arrive on Day 5.
             </p>
           </div>

@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, File, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, File, Query, UploadFile, status
 from sqlalchemy import func, select
 
 from app.api.deps import (
     DbSession,
     PaginationDep,
     get_batch_or_404,
+    get_job_description_or_404,
     get_job_role_or_404,
 )
 from app.core.config import settings
@@ -22,6 +23,7 @@ from app.schemas.common import MessageResponse, Page, PageMeta
 from app.schemas.job_role import JobRoleSummary
 from app.schemas.resume import BulkUploadResponse, ResumeRead
 from app.services import resume_service
+from app.services.parsing_service import parse_resume
 
 router = APIRouter(prefix="/batches", tags=["recruiter-batches"])
 
@@ -34,9 +36,12 @@ router = APIRouter(prefix="/batches", tags=["recruiter-batches"])
 )
 async def create_batch(payload: BatchCreate, session: DbSession) -> BatchRead:
     await get_job_role_or_404(session, payload.job_role_id)
+    if payload.job_description_id is not None:
+        await get_job_description_or_404(session, payload.job_description_id)
 
     batch = ScreeningBatch(
         job_role_id=payload.job_role_id,
+        job_description_id=payload.job_description_id,
         name=payload.name,
         recruiter_email=payload.recruiter_email,
         notes=payload.notes,
@@ -106,6 +111,7 @@ async def get_batch(batch_id: uuid.UUID, session: DbSession) -> BatchDetail:
 async def bulk_upload_resumes(
     batch_id: uuid.UUID,
     session: DbSession,
+    background_tasks: BackgroundTasks,
     files: list[UploadFile] = File(..., description="One or more resume files"),
 ) -> BulkUploadResponse:
     """Each file is validated independently — bad files are reported, not fatal."""
@@ -121,6 +127,11 @@ async def bulk_upload_resumes(
         )
 
     items = await resume_service.ingest_bulk(session, files=files, batch=batch)
+
+    if settings.PARSE_ON_UPLOAD and settings.GROQ_API_KEY:
+        for item in items:
+            if item.status == "uploaded" and item.resume_id is not None:
+                background_tasks.add_task(parse_resume, item.resume_id)
 
     return BulkUploadResponse(
         batch_id=batch.id,

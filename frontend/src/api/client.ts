@@ -2,6 +2,7 @@ import type {
   ApiErrorBody,
   Batch,
   BulkUploadResponse,
+  JobDescription,
   JobRoleDetail,
   JobRoleSummary,
   Page,
@@ -57,12 +58,34 @@ export const api = {
     return request<ResumeUploadResponse>('/resumes', { method: 'POST', body: form })
   },
 
-  createBatch: (input: { job_role_id: string; name: string; recruiter_email?: string }) =>
+  createBatch: (input: {
+    job_role_id: string
+    name: string
+    recruiter_email?: string
+    job_description_id?: string
+  }) =>
     request<Batch>('/batches', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(input),
     }),
+
+  createJobDescription: (input: {
+    title: string
+    job_role_id?: string
+    raw_text?: string
+    file?: File
+  }) => {
+    const form = new FormData()
+    form.append('title', input.title)
+    if (input.job_role_id) form.append('job_role_id', input.job_role_id)
+    if (input.file) {
+      form.append('file', input.file)
+    } else {
+      form.append('raw_text', input.raw_text ?? '')
+    }
+    return request<JobDescription>('/job-descriptions', { method: 'POST', body: form })
+  },
 
   uploadBatchResumes: (batchId: string, files: File[]) => {
     const form = new FormData()

@@ -1,0 +1,54 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /MediaBox [0 0 612 792] /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+5 0 obj
+<< /Length 1409 >>
+stream
+BT
+/F1 11 Tf
+12 TL
+1 0 0 1 50 740 Tm (AMIT VERMA) Tj
+1 0 0 1 50 727 Tm (Machine Learning Engineer | Pune, India) Tj
+1 0 0 1 50 714 Tm (amit.verma@example.com | +91 90123 45678) Tj
+1 0 0 1 50 701 Tm (SUMMARY) Tj
+1 0 0 1 50 688 Tm (ML Engineer with 3 years of experience productionising models. Owns pipelines) Tj
+1 0 0 1 50 675 Tm (end to end: feature engineering, training, deployment and drift monitoring.) Tj
+1 0 0 1 50 662 Tm (SKILLS) Tj
+1 0 0 1 50 649 Tm (Python, Machine Learning, Scikit-learn, Pandas, NumPy, XGBoost, PyTorch,) Tj
+1 0 0 1 50 636 Tm (MLflow, Airflow, Docker, Kubernetes, SQL, AWS SageMaker, Model Monitoring, CI/CD) Tj
+1 0 0 1 50 623 Tm (EXPERIENCE) Tj
+1 0 0 1 50 610 Tm (Machine Learning Engineer ? FinEdge Analytics \(2022 - Present\)) Tj
+1 0 0 1 50 597 Tm (- Built a churn prediction model \(AUC 0.87\) served to 400k users daily.) Tj
+1 0 0 1 50 584 Tm (- Automated retraining with Airflow; reduced manual effort by 12 hours/week.) Tj
+1 0 0 1 50 571 Tm (- Instrumented drift detection that caught a feature-skew incident within 2 hours.) Tj
+1 0 0 1 50 558 Tm (Data Analyst ? FinEdge Analytics \(2021 - 2022\)) Tj
+1 0 0 1 50 545 Tm (- Built SQL reporting pipelines and executive dashboards.) Tj
+1 0 0 1 50 532 Tm (EDUCATION) Tj
+1 0 0 1 50 519 Tm (M.Sc. in Data Science, Symbiosis Pune \(2019 - 2021\)) Tj
+1 0 0 1 50 506 Tm (B.Sc. in Statistics, Fergusson College \(2016 - 2019\)) Tj
+ET
+endstream
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000311 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1772
+%%EOF

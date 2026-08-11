@@ -18,6 +18,11 @@ greenlet==3.1.1
 aiofiles==24.1.0
 python-slugify==8.0.4
 
+# --- Parsing (Day 2) ---
+pypdf==6.15.0
+python-docx==1.2.0
+groq==1.6.0
+
 # --- Dev / test ---
 pytest==8.3.4
 pytest-asyncio==0.25.0

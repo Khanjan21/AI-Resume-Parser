@@ -38,6 +38,39 @@ class TestCreateBatch:
         )
         assert response.status_code == 404
 
+    async def test_links_a_job_description(
+        self, client: AsyncClient, ai_role_id: str
+    ) -> None:
+        jd = await client.post(
+            "/api/v1/job-descriptions",
+            data={"title": "AI Engineer", "raw_text": "Need Python and RAG experience."},
+        )
+        jd_id = jd.json()["id"]
+
+        response = await client.post(
+            "/api/v1/batches",
+            json={
+                "job_role_id": ai_role_id,
+                "job_description_id": jd_id,
+                "name": "with JD",
+            },
+        )
+        assert response.status_code == 201
+        assert response.json()["job_description_id"] == jd_id
+
+    async def test_rejects_unknown_job_description(
+        self, client: AsyncClient, ai_role_id: str
+    ) -> None:
+        response = await client.post(
+            "/api/v1/batches",
+            json={
+                "job_role_id": ai_role_id,
+                "job_description_id": str(uuid.uuid4()),
+                "name": "x",
+            },
+        )
+        assert response.status_code == 404
+
     async def test_rejects_invalid_email(
         self, client: AsyncClient, ai_role_id: str
     ) -> None:

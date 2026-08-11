@@ -157,19 +157,71 @@ def write_docx(path: Path, text: str) -> None:
         archive.writestr("word/document.xml", _docx_document(text))
 
 
+def _escape_pdf_text(text: str) -> str:
+    return text.replace("\\", r"\\").replace("(", r"\(").replace(")", r"\)")
+
+
+def write_pdf(path: Path, text: str) -> None:
+    """Hand-rolled, genuinely valid single-page PDF — no reportlab/fpdf needed.
+
+    Builds the object table sequentially while tracking byte offsets, so the
+    xref table it emits is correct rather than approximate. pypdf reads the
+    result exactly as it would a real Word/Acrobat export.
+    """
+    lines = [line for line in text.splitlines() if line.strip()][:55]  # fits one page at 11pt
+    content_ops = ["BT", "/F1 11 Tf", "12 TL"]
+    y = 740
+    for line in lines:
+        content_ops.append(f"1 0 0 1 50 {y} Tm ({_escape_pdf_text(line)}) Tj")
+        y -= 13
+    content_ops.append("ET")
+    content_bytes = "\n".join(content_ops).encode("latin-1", errors="replace")
+
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> "
+        b"/MediaBox [0 0 612 792] /Contents 5 0 R >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        b"<< /Length " + str(len(content_bytes)).encode() + b" >>\nstream\n"
+        + content_bytes + b"\nendstream",
+    ]
+
+    buf = bytearray(b"%PDF-1.4\n")
+    offsets: list[int] = []
+    for index, obj in enumerate(objects, start=1):
+        offsets.append(len(buf))
+        buf += f"{index} 0 obj\n".encode()
+        buf += obj
+        buf += b"\nendobj\n"
+
+    xref_offset = len(buf)
+    count = len(objects) + 1
+    buf += f"xref\n0 {count}\n".encode()
+    buf += b"0000000000 65535 f \n"
+    for offset in offsets:
+        buf += f"{offset:010d} 00000 n \n".encode()
+    buf += (
+        f"trailer\n<< /Size {count} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF"
+    ).encode()
+
+    path.write_bytes(bytes(buf))
+
+
 def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     for filename, body in SAMPLES.items():
         (OUT_DIR / filename).write_text(body, encoding="utf-8")
 
-    # One DOCX so the parser has a non-plaintext sample to work with.
+    # One DOCX and one real PDF so the parser has non-plaintext samples too.
     write_docx(OUT_DIR / "rahul_sharma_ai_engineer.docx", SAMPLES["rahul_sharma_ai_engineer.txt"])
+    write_pdf(OUT_DIR / "amit_verma_ml_engineer.pdf", SAMPLES["amit_verma_ml_engineer.txt"])
 
     # A file whose extension lies about its contents — must be rejected.
     (OUT_DIR / "not_really_a.pdf").write_bytes(b"This is plain text pretending to be a PDF.")
 
-    print(f"Wrote {len(SAMPLES) + 2} sample files to {OUT_DIR}")
+    print(f"Wrote {len(SAMPLES) + 3} sample files to {OUT_DIR}")
 
 
 if __name__ == "__main__":
