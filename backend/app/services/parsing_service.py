@@ -29,6 +29,7 @@ from app.schemas.parsed_resume import (
     ParsedResumeData,
 )
 from app.services.llm import LLMExtractionError, get_llm_provider
+from app.services.scoring_service import score_resume
 from app.services.storage import resume_storage
 from app.services.text_extraction import TextExtractionError, extract_text
 
@@ -81,6 +82,8 @@ async def _sync_candidate(session, resume: Resume, parsed: ParsedResumeData) -> 
 
 
 async def parse_resume(resume_id: uuid.UUID) -> None:
+    parsed_successfully = False
+
     async with AsyncSessionLocal() as session:
         resume = await session.get(Resume, resume_id)
         if resume is None:
@@ -112,6 +115,7 @@ async def parse_resume(resume_id: uuid.UUID) -> None:
             resume.parse_status = ParseStatus.PARSED
             resume.parse_error = None
             resume.parsed_at = _utcnow()
+            parsed_successfully = True
 
         except (TextExtractionError, LLMExtractionError) as exc:
             logger.info("Parse failed for resume %s: %s", resume_id, exc)
@@ -124,6 +128,13 @@ async def parse_resume(resume_id: uuid.UUID) -> None:
             resume.parse_error = f"Unexpected error: {exc}"[:2000]
 
         await session.commit()
+
+    # Scoring needs its own fresh session — done outside the `async with`
+    # block above so parsing's session is fully closed first. A resume that
+    # failed to parse has nothing to score yet, so it's left at whatever
+    # analysis_status it already had (normally "pending").
+    if parsed_successfully:
+        await score_resume(resume_id)
 
 
 async def parse_job_description(job_description_id: uuid.UUID) -> None:

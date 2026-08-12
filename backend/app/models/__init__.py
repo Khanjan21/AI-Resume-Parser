@@ -16,6 +16,7 @@ from app.models.enums import (
 from app.models.job_description import JobDescription
 from app.models.job_role import JobRole
 from app.models.resume import Resume
+from app.models.resume_score import ResumeScore
 from app.models.screening_batch import ScreeningBatch
 
 __all__ = [
@@ -28,6 +29,7 @@ __all__ = [
     "JobRole",
     "ParseStatus",
     "Resume",
+    "ResumeScore",
     "ScreeningBatch",
     "SkillImportance",
     "UploadSource",

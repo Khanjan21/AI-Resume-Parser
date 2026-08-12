@@ -8,7 +8,7 @@ the same class validates what comes back before it's persisted to
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ExperienceEntry(BaseModel):
@@ -50,13 +50,23 @@ class ParsedResumeData(BaseModel):
         default=None, description="Total professional experience in years, estimated from the work history"
     )
 
-    skills: list[str] = Field(
-        default_factory=list,
+    # Typed as `| None` (not just a list default) so the JSON schema handed to
+    # Groq allows null — the model sometimes emits null instead of [] for an
+    # empty list, and Groq's own tool-call validation rejects that against a
+    # plain "array" schema with a 400 before we ever see the response. The
+    # validator below normalises it back to [] for everything downstream.
+    skills: list[str] | None = Field(
+        default=None,
         description="Flat list of technical and professional skills, normalised to common names (e.g. 'PyTorch' not 'pytorch')",
     )
-    experience: list[ExperienceEntry] = Field(default_factory=list)
-    education: list[EducationEntry] = Field(default_factory=list)
-    certifications: list[str] = Field(default_factory=list)
+    experience: list[ExperienceEntry] | None = Field(default=None)
+    education: list[EducationEntry] | None = Field(default=None)
+    certifications: list[str] | None = Field(default=None)
+
+    @field_validator("skills", "experience", "education", "certifications", mode="before")
+    @classmethod
+    def _null_list_becomes_empty(cls, value: object) -> object:
+        return [] if value is None else value
 
 
 RESUME_TOOL_NAME = "extract_resume"

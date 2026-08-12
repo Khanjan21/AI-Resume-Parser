@@ -21,7 +21,7 @@ from app.models.screening_batch import ScreeningBatch
 from app.schemas.batch import BatchCreate, BatchDetail, BatchRead
 from app.schemas.common import MessageResponse, Page, PageMeta
 from app.schemas.job_role import JobRoleSummary
-from app.schemas.resume import BulkUploadResponse, ResumeRead
+from app.schemas.resume import BulkUploadResponse, ResumeDetail
 from app.services import resume_service
 from app.services.parsing_service import parse_resume
 
@@ -96,7 +96,7 @@ async def get_batch(batch_id: uuid.UUID, session: DbSession) -> BatchDetail:
     detail = BatchDetail.model_validate(batch)
     detail.job_role = JobRoleSummary.model_validate(batch.job_role)
     detail.resumes = [
-        ResumeRead.model_validate(resume)
+        ResumeDetail.model_validate(resume)
         for resume in sorted(batch.resumes, key=lambda item: item.created_at)
     ]
     return detail

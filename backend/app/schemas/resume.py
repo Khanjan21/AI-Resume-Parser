@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
 from app.models.enums import AnalysisStatus, ParseStatus, UploadSource
+from app.schemas.resume_score import ResumeScoreRead
 
 
 class ResumeRead(BaseModel):
@@ -28,11 +30,20 @@ class ResumeRead(BaseModel):
     parse_status: ParseStatus
     parse_error: str | None
     analysis_status: AnalysisStatus
+    analysis_error: str | None
     word_count: int | None
     page_count: int | None
 
     created_at: datetime
     updated_at: datetime
+
+
+class ResumeDetail(ResumeRead):
+    """Full record, including extracted text/data and the score once ready."""
+
+    raw_text: str | None
+    parsed_data: dict[str, Any]
+    score: ResumeScoreRead | None = None
 
 
 class ResumeUploadResponse(BaseModel):

@@ -6,6 +6,7 @@ import type {
   JobRoleDetail,
   JobRoleSummary,
   Page,
+  ResumeDetail,
   ResumeUploadResponse,
 } from './types'
 
@@ -57,6 +58,8 @@ export const api = {
     form.append('file', file)
     return request<ResumeUploadResponse>('/resumes', { method: 'POST', body: form })
   },
+
+  getResume: (resumeId: string) => request<ResumeDetail>(`/resumes/${resumeId}`),
 
   createBatch: (input: {
     job_role_id: string

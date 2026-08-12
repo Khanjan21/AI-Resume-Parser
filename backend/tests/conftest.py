@@ -181,10 +181,15 @@ def fake_llm(monkeypatch) -> FakeLLMProvider:
 
 @pytest_asyncio.fixture(loop_scope="function")
 async def parsing_env(test_engine, tmp_path, monkeypatch) -> LocalResumeStorage:
-    """Isolates `parsing_service` for tests that call it directly (no HTTP
-    layer) — same idea as `client`'s patches, without spinning up the app."""
+    """Isolates `parsing_service` (and the `scoring_service` it triggers after
+    a successful parse) for tests that call it directly (no HTTP layer) —
+    same idea as `client`'s patches, without spinning up the app."""
     factory = async_sessionmaker(bind=test_engine, expire_on_commit=False, autoflush=False)
     monkeypatch.setattr("app.services.parsing_service.AsyncSessionLocal", factory)
+    # scoring_service imports its own AsyncSessionLocal reference (module-level,
+    # independent of parsing_service's) — miss this and score_resume() silently
+    # connects to the real dev database instead of the test one.
+    monkeypatch.setattr("app.services.scoring_service.AsyncSessionLocal", factory)
 
     storage = LocalResumeStorage(root=tmp_path / "resumes")
     storage.ensure_ready()
@@ -199,7 +204,8 @@ async def client(
     """An HTTP client wired to the test DB and a throwaway storage root.
 
     Any background parse task a request queues must also land in the test DB
-    and test storage, never the real ones — `parsing_service` gets its own
+    and test storage, never the real ones — `parsing_service` (and the
+    `scoring_service` it triggers after a successful parse) get their own
     copies of `AsyncSessionLocal` and `resume_storage` patched here.
     """
     test_storage = LocalResumeStorage(root=tmp_path / "resumes")
@@ -211,6 +217,7 @@ async def client(
 
     factory = async_sessionmaker(bind=test_engine, expire_on_commit=False, autoflush=False)
     monkeypatch.setattr("app.services.parsing_service.AsyncSessionLocal", factory)
+    monkeypatch.setattr("app.services.scoring_service.AsyncSessionLocal", factory)
 
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
         async with factory() as db:

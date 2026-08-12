@@ -25,6 +25,7 @@ from app.models.enums import AnalysisStatus, ParseStatus, UploadSource
 if TYPE_CHECKING:
     from app.models.candidate import Candidate
     from app.models.job_role import JobRole
+    from app.models.resume_score import ResumeScore
     from app.models.screening_batch import ScreeningBatch
 
 
@@ -91,10 +92,14 @@ class Resume(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     analysis_status: Mapped[AnalysisStatus] = mapped_column(
         String(20), nullable=False, default=AnalysisStatus.PENDING, index=True
     )
+    analysis_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     candidate: Mapped["Candidate | None"] = relationship(back_populates="resumes")
     job_role: Mapped["JobRole | None"] = relationship(back_populates="resumes")
     batch: Mapped["ScreeningBatch | None"] = relationship(back_populates="resumes")
+    score: Mapped["ResumeScore | None"] = relationship(
+        back_populates="resume", uselist=False, cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:  # pragma: no cover - debug helper
         return f"<Resume {self.original_filename} ({self.parse_status})>"

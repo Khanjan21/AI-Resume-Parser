@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.models.enums import BatchStatus
 from app.schemas.job_role import JobRoleSummary
-from app.schemas.resume import ResumeRead
+from app.schemas.resume import ResumeDetail
 
 
 class BatchCreate(BaseModel):
@@ -43,4 +43,4 @@ class BatchRead(BaseModel):
 
 class BatchDetail(BatchRead):
     job_role: JobRoleSummary | None = None
-    resumes: list[ResumeRead] = []
+    resumes: list[ResumeDetail] = []

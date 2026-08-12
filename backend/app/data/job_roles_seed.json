@@ -6,7 +6,7 @@
     "summary": "Builds and ships LLM-powered applications: RAG systems, agents, evaluation harnesses and the serving infrastructure around them.",
     "description": "An AI Engineer designs, builds and operates production systems on top of foundation models. The role spans prompt and context engineering, retrieval-augmented generation, embedding and vector-store design, agent/tool orchestration, evaluation and guardrails, plus the API and deployment layer that exposes these capabilities to users. Strong candidates show end-to-end ownership: they have taken an LLM feature from prototype to production with measurable quality metrics, latency budgets and cost controls.",
     "default_level": "mid",
-    "min_experience_years": 2.0,
+    "min_experience_years": 0.0,
     "max_experience_years": 8.0,
     "required_skills": [
       "Python",
@@ -94,7 +94,7 @@
     "summary": "Trains, deploys and monitors machine learning models in production, owning the pipeline from features to serving.",
     "description": "A Machine Learning Engineer turns models into reliable production services. The role covers feature engineering, model training and validation, experiment tracking, reproducible pipelines, model packaging and serving, plus monitoring for drift and degradation. Strong candidates combine solid ML fundamentals with software engineering discipline: versioned data, tested code, automated retraining and clear performance baselines.",
     "default_level": "mid",
-    "min_experience_years": 2.0,
+    "min_experience_years": 0.0,
     "max_experience_years": 10.0,
     "required_skills": [
       "Python",
@@ -178,7 +178,7 @@
     "summary": "Builds backend services, APIs and automation in Python with an emphasis on clean, tested, maintainable code.",
     "description": "A Python Developer designs and implements server-side applications: REST APIs, background workers, integrations and data-processing jobs. The role demands fluency in the Python ecosystem, relational database design, testing practice and version control workflow. Strong candidates show ownership of production services, comfort with debugging and profiling, and a track record of readable code that other engineers can extend.",
     "default_level": "mid",
-    "min_experience_years": 1.0,
+    "min_experience_years": 0.0,
     "max_experience_years": 8.0,
     "required_skills": [
       "Python",
@@ -255,7 +255,7 @@
     "summary": "Owns features end to end across the browser, the API layer and the database.",
     "description": "A Full Stack Developer delivers complete product features: responsive user interfaces, the backend APIs behind them and the data model underneath. The role spans modern JavaScript/TypeScript frameworks, server-side development, database design, authentication, and deployment. Strong candidates demonstrate breadth without shallowness — they can reason about render performance and query plans in the same day.",
     "default_level": "mid",
-    "min_experience_years": 2.0,
+    "min_experience_years": 0.0,
     "max_experience_years": 10.0,
     "required_skills": [
       "JavaScript",
@@ -334,7 +334,7 @@
     "summary": "Turns data into decisions through statistical analysis, experimentation and predictive modelling.",
     "description": "A Data Scientist frames business problems as analytical questions, builds the datasets to answer them, and communicates findings that change decisions. The role covers exploratory analysis, statistical inference, experiment design, predictive modelling and visualisation. Strong candidates pair technical depth in statistics and Python/SQL with the communication skill to make stakeholders act on a result.",
     "default_level": "mid",
-    "min_experience_years": 1.0,
+    "min_experience_years": 0.0,
     "max_experience_years": 10.0,
     "required_skills": [
       "Python",
@@ -416,7 +416,7 @@
     "summary": "Bridges business needs and technical delivery through requirements, analysis and stakeholder alignment.",
     "description": "A Business Analyst elicits and documents requirements, analyses processes and data, and keeps stakeholders and delivery teams aligned. The role covers requirement gathering, process mapping, gap analysis, reporting, and support for UAT and rollout. Strong candidates combine analytical rigour in SQL and spreadsheets with the communication and facilitation skills to drive consensus across teams.",
     "default_level": "mid",
-    "min_experience_years": 1.0,
+    "min_experience_years": 0.0,
     "max_experience_years": 12.0,
     "required_skills": [
       "Requirement Gathering",

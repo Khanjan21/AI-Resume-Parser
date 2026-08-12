@@ -62,10 +62,36 @@ export interface Resume {
   parse_status: ParseStatus
   parse_error: string | null
   analysis_status: AnalysisStatus
+  analysis_error: string | null
   word_count: number | null
   page_count: number | null
   created_at: string
   updated_at: string
+}
+
+export interface ResumeScore {
+  id: string
+  resume_id: string
+  job_role_id: string | null
+  job_description_id: string | null
+  ats_score: number
+  matched_ats_keywords: string[]
+  required_skill_match: number
+  matched_skills: string[]
+  missing_skills: string[]
+  experience_match: number
+  candidate_experience_years: number | null
+  suggestions: string[]
+  semantic_score: number | null
+  final_score: number | null
+  category: string | null
+  scored_at: string
+}
+
+export interface ResumeDetail extends Resume {
+  raw_text: string | null
+  parsed_data: Record<string, unknown>
+  score: ResumeScore | null
 }
 
 export interface ResumeUploadResponse {

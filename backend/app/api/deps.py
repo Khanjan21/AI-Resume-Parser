@@ -56,7 +56,11 @@ async def get_resume_or_404(session: AsyncSession, resume_id: uuid.UUID) -> Resu
     stmt = (
         select(Resume)
         .where(Resume.id == resume_id)
-        .options(selectinload(Resume.batch), selectinload(Resume.job_role))
+        .options(
+            selectinload(Resume.batch),
+            selectinload(Resume.job_role),
+            selectinload(Resume.score),
+        )
     )
     resume = (await session.execute(stmt)).scalar_one_or_none()
     if resume is None:
@@ -78,7 +82,7 @@ async def get_batch_or_404(
 ) -> ScreeningBatch:
     options = [selectinload(ScreeningBatch.job_role)]
     if with_resumes:
-        options.append(selectinload(ScreeningBatch.resumes))
+        options.append(selectinload(ScreeningBatch.resumes).selectinload(Resume.score))
 
     stmt = select(ScreeningBatch).where(ScreeningBatch.id == batch_id).options(*options)
     batch = (await session.execute(stmt)).scalar_one_or_none()

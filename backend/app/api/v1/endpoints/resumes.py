@@ -15,13 +15,14 @@ from app.api.deps import (
     get_resume_or_404,
 )
 from app.core.config import settings
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import NotFoundError, ValidationError
 from app.models.enums import ParseStatus, UploadSource
 from app.models.resume import Resume
 from app.schemas.common import MessageResponse, Page, PageMeta
-from app.schemas.resume import ResumeRead, ResumeUploadResponse
+from app.schemas.resume import ResumeDetail, ResumeRead, ResumeUploadResponse
 from app.services import resume_service
 from app.services.parsing_service import parse_resume
+from app.services.scoring_service import score_resume
 from app.services.storage import resume_storage
 
 
@@ -116,10 +117,14 @@ async def list_resumes(
     )
 
 
-@router.get("/{resume_id}", response_model=ResumeRead, summary="Get a resume record")
-async def get_resume(resume_id: uuid.UUID, session: DbSession) -> ResumeRead:
+@router.get(
+    "/{resume_id}",
+    response_model=ResumeDetail,
+    summary="Get a resume record, including parsed data and its score once ready",
+)
+async def get_resume(resume_id: uuid.UUID, session: DbSession) -> ResumeDetail:
     resume = await get_resume_or_404(session, resume_id)
-    return ResumeRead.model_validate(resume)
+    return ResumeDetail.model_validate(resume)
 
 
 @router.get("/{resume_id}/download", summary="Download the original file")
@@ -157,6 +162,25 @@ async def reparse_resume(
     await session.refresh(resume)
     background_tasks.add_task(parse_resume, resume.id)
     return ResumeRead.model_validate(resume)
+
+
+@router.post(
+    "/{resume_id}/score",
+    response_model=ResumeDetail,
+    summary="(Re-)run ATS scoring on an already-parsed resume",
+)
+async def rescore_resume(resume_id: uuid.UUID, session: DbSession) -> ResumeDetail:
+    """Runs synchronously — unlike parsing, scoring has no LLM call to wait on."""
+    resume = await get_resume_or_404(session, resume_id)
+    if resume.parse_status != ParseStatus.PARSED:
+        raise ValidationError(
+            "This resume hasn't been parsed yet, so there's nothing to score."
+        )
+
+    await score_resume(resume.id)
+
+    rescored = await get_resume_or_404(session, resume_id)
+    return ResumeDetail.model_validate(rescored)
 
 
 @router.delete(
