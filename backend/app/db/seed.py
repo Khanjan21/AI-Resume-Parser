@@ -18,6 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import get_logger
 from app.db.session import AsyncSessionLocal
 from app.models.job_role import JobRole
+from app.services.embedding import get_embedding_provider
+from app.services.embedding_text import build_job_role_embedding_text
 
 logger = get_logger(__name__)
 
@@ -66,14 +68,18 @@ async def seed_job_roles(session: AsyncSession) -> tuple[int, int]:
     by_slug = {role.slug: role for role in existing}
 
     created = updated = 0
+    needs_embedding: list[JobRole] = []
+
     for payload in roles:
         slug = payload["slug"]
         fields = {key: payload[key] for key in _SEED_FIELDS if key in payload}
         role = by_slug.get(slug)
 
         if role is None:
-            session.add(JobRole(slug=slug, is_system=True, is_active=True, **fields))
+            role = JobRole(slug=slug, is_system=True, is_active=True, **fields)
+            session.add(role)
             created += 1
+            needs_embedding.append(role)
             continue
 
         if not role.is_system:
@@ -87,10 +93,41 @@ async def seed_job_roles(session: AsyncSession) -> tuple[int, int]:
                 changed = True
         if changed:
             updated += 1
+        # Covers both "content changed" and "embedding column didn't exist
+        # yet when this row was created" (e.g. right after the Day 4
+        # migration) — either way, there's nothing current to compare against.
+        if changed or role.embedding is None:
+            needs_embedding.append(role)
+
+    if needs_embedding:
+        await _embed_roles(session, needs_embedding)
 
     await session.commit()
     logger.info("Job role seed complete: %d created, %d updated", created, updated)
     return created, updated
+
+
+async def _embed_roles(session: AsyncSession, roles: list[JobRole]) -> None:
+    """Batch-embeds every role that's new, changed, or missing an embedding.
+
+    One call to the model for all of them, rather than one per role — batching
+    is where local transformer models actually get their speed.
+    """
+    texts = [
+        build_job_role_embedding_text(
+            title=role.title,
+            summary=role.summary,
+            description=role.description,
+            required_skills=role.required_skills,
+            preferred_skills=role.preferred_skills,
+            responsibilities=role.responsibilities,
+        )
+        for role in roles
+    ]
+    vectors = await get_embedding_provider().embed(texts)
+    for role, vector in zip(roles, vectors):
+        role.embedding = vector
+    logger.info("Embedded %d job role(s)", len(roles))
 
 
 async def run_seed() -> None:

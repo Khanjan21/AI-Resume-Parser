@@ -28,6 +28,8 @@ from app.schemas.parsed_resume import (
     RESUME_TOOL_NAME,
     ParsedResumeData,
 )
+from app.services.embedding import EmbeddingError, get_embedding_provider
+from app.services.embedding_text import build_job_description_embedding_text
 from app.services.llm import LLMExtractionError, get_llm_provider
 from app.services.scoring_service import score_resume
 from app.services.storage import resume_storage
@@ -160,11 +162,17 @@ async def parse_job_description(job_description_id: uuid.UUID) -> None:
             )
 
             jd.parsed_data = parsed.model_dump(mode="json")
+
+            embedding_text = build_job_description_embedding_text(
+                title=jd.title, parsed_data=jd.parsed_data, raw_text=jd.raw_text
+            )
+            [jd.embedding] = await get_embedding_provider().embed([embedding_text])
+
             jd.parse_status = ParseStatus.PARSED
             jd.parse_error = None
             jd.parsed_at = _utcnow()
 
-        except LLMExtractionError as exc:
+        except (LLMExtractionError, EmbeddingError) as exc:
             logger.info("Parse failed for job description %s: %s", job_description_id, exc)
             jd.parse_status = ParseStatus.FAILED
             jd.parse_error = str(exc)[:2000]

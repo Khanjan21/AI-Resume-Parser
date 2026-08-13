@@ -14,15 +14,15 @@ An AI-powered platform with two flows:
 | --- | --- |
 | Frontend | React 18 + TypeScript + Vite |
 | Backend | FastAPI + SQLAlchemy 2.0 (async) + Pydantic v2 |
-| Database | PostgreSQL 16 (`pgvector` image, ready for Day 4) |
+| Database | PostgreSQL 16 + `pgvector` extension (vector storage/search lives in the same DB) |
 | Migrations | Alembic (async env) |
-| Vector store | Qdrant (Day 4, `--profile vector`) |
+| Embeddings | `BAAI/bge-small-en-v1.5` via `sentence-transformers`, local CPU inference |
 | LLM | Groq (Llama 3.3 70B), forced tool-calling for structured extraction |
 | Deployment | Docker + Docker Compose |
 
 ---
 
-## Status — Day 3 complete
+## Status — Day 4 complete
 
 **Day 1** — foundation: job-role catalogue, database, upload pipeline.
 
@@ -75,6 +75,36 @@ resume, watched it parse then auto-score, and inspected the exact matched/missin
 skills and suggestions. Along the way this surfaced a genuine bug — see "Design
 notes" — that's now fixed and covered by a regression test.
 
+**Day 4** — semantic matching.
+
+- [x] Whole-profile embeddings via `BAAI/bge-small-en-v1.5` (`sentence-transformers`),
+      running locally on CPU — free, no API key, no rate limits
+- [x] Embeddings stored and compared using **pgvector** directly in Postgres — no
+      separate vector-store service; the `qdrant` service scaffolded in Day 1's
+      `docker-compose.yml` was removed once this decision was made
+- [x] `semantic_score`: cosine similarity between a resume's profile embedding and
+      its role's (and/or linked JD's) embedding, rescaled from the model's
+      realistic similarity range into an intuitive 0-100
+- [x] `final_score` now blends `ats` + `required_skills` + `experience` +
+      `semantic` using a role's full configured weights, instead of dropping
+      `semantic`'s share as Day 3 had to
+- [x] Role/JD embeddings computed once and reused — at seed time for system
+      roles, right after parsing for JDs, lazily backfilled for custom roles
+      created via the API
+- [x] Embedding model warms up at app startup so the first real score isn't the
+      request that pays the multi-second load cost
+- [x] **A calibration finding that changed the plan**: bare skill-name-to-skill-name
+      embedding comparison ("Vector Databases" vs "FAISS") does *not* reliably
+      separate true matches from false ones with this model — tested and
+      rejected empirically before writing any scoring code. Semantic matching
+      here operates on whole profile/role text only; see "Design notes."
+
+**Verified end to end against the real BGE model**: a strong-fit resume scored
+93% semantic / 77.1% overall (up from a literal-only 57%); a genuinely
+mismatched resume (Business Analyst against an AI Engineer role) correctly
+scored 51.5% semantic / 35.5% overall; a custom role created via the API with
+no pre-computed embedding correctly backfilled one on first score.
+
 | Candidate flow | Recruiter flow |
 | --- | --- |
 | ![Candidate upload page](docs/screenshots/candidate.png) | ![Recruiter bulk upload page](docs/screenshots/recruiter.png) |
@@ -86,7 +116,7 @@ notes" — that's now fixed and covered by a regression test.
 | 1 | Foundation, job roles, database, APIs, resume uploads ✅ |
 | 2 | Resume + job-description parsing (PDF/DOCX text, LLM structured extraction) ✅ |
 | 3 | ATS scoring ✅ |
-| 4 | Semantic matching (BGE/E5 embeddings) + skill matching |
+| 4 | Semantic matching (embeddings via pgvector) ✅ |
 | 5 | Candidate ranking and shortlist categories |
 | 6 | RAG, LLM explanations, recruiter AI chat |
 | 7 | Evaluation benchmark, Dockerisation, docs, deployment |
@@ -114,6 +144,11 @@ cp .env.example .env
 > `GROQ_API_KEY` in `.env`. Without it, uploads still work — text extraction and
 > storage happen normally — but the structured-extraction step is skipped
 > rather than failed, and `parse_status` stays `pending`.
+
+> **Semantic matching needs no key** — `sentence-transformers` runs the
+> embedding model locally. First install pulls in torch (CPU build, a genuinely
+> large download); first run downloads the ~130MB model from Hugging Face
+> (skipped entirely if you build the Docker image, which pre-downloads it).
 
 ### 2. Database
 
@@ -183,7 +218,7 @@ production. A `resume_screening_test` database is created and dropped per run;
 your dev data is never touched.
 
 ```
-150 passed
+174 passed
 ```
 
 Coverage: filename sanitisation, magic-byte sniffing, size limits, storage
@@ -192,11 +227,14 @@ recruiter bulk upload (partial-failure reporting), batch lifecycle, health probe
 text extraction (PDF/DOCX/TXT/MD, including a genuinely valid hand-rolled PDF
 fixture), parsing orchestration (success/failure paths, candidate linking,
 re-parse idempotency), job-description creation and parsing, ATS/skill/experience
-scoring math (parametrised against known inputs), JD-vocabulary merging, and a
-schema-level regression test locking in the null-list Groq fix described below.
+scoring math (parametrised against known inputs), JD-vocabulary merging, a
+schema-level regression test locking in the null-list Groq fix described below,
+semantic-score math and weight blending, embedding-text builders, and the seed
+embedding backfill (idempotent — re-seeding unchanged roles doesn't re-embed them).
 
-No test ever calls the real Groq API — a `FakeLLMProvider` fixture stands in for
-it, so the suite runs offline and free. See "Design notes" below for how.
+No test ever calls the real Groq API or downloads the real embedding model — a
+`FakeLLMProvider` and `FakeEmbeddingProvider` stand in for both, so the suite
+runs offline, free, and fast. See "Design notes" below for how.
 
 ---
 
@@ -264,21 +302,23 @@ Every parsed resume carries a `score` object once scoring completes:
   "experience_match": 100.0,
   "candidate_experience_years": 4.0,
   "suggestions": [
-    "Add these required skills if you have them: Vector Databases, REST API, Git.",
-    "Your resume is missing common role keywords like: GPT, Claude, retrieval augmented generation."
+    "Good news first: Python, RAG, LangChain, FastAPI, Docker all came through clearly, and they're exactly what this role is looking for. …",
+    "You're missing a few skills this role looks for: Vector Databases, REST API, Git. …",
+    "Automated screening for this role commonly looks for terms like GPT, Claude, retrieval augmented generation. …"
   ],
-  "semantic_score": null,
-  "final_score": null,
+  "semantic_score": 93.0,
+  "final_score": 77.1,
   "category": null
 }
 ```
 
-`semantic_score`, `final_score` and `category` are reserved for Days 4-5 and
-stay `null` until then. That real example is a genuine limitation worth
-noting: the candidate's resume lists FAISS, Qdrant and Pinecone but not the
-literal phrase "Vector Databases", so `ats_score`/`missing_skills` penalise it
-even though the candidate clearly has the underlying skill — exactly the gap
-Day 4's semantic matching exists to close.
+This is a real, unedited result. Note the gap between `ats_score` (25%) and
+`semantic_score` (93%): the candidate's resume lists FAISS, Qdrant and Pinecone
+but not the literal phrase "Vector Databases", so keyword scanning alone
+penalises a candidate who clearly has the underlying skill. `final_score`
+(77.1%) blends both signals using the role's configured weights, landing on a
+fairer overall number than either alone. `category` is reserved for Day 5's
+Strong Match / Consider / Weak Match bucketing and stays `null` until then.
 
 ### Error format
 
@@ -406,6 +446,73 @@ every list field's generated schema permits null and that null validates to
 the real API" step earlier in this session mattered — the mocked test suite
 was green throughout; only a live call surfaced it.
 
+**pgvector, not a separate vector-store service.** Day 1 scaffolded a Qdrant
+service in `docker-compose.yml` "just in case." Day 4 didn't use it: the
+`pgvector/pgvector:pg16` image was already the Postgres in use, so enabling its
+`vector` extension (one migration: `CREATE EXTENSION IF NOT EXISTS vector`) and
+adding `vector(384)` columns via the `pgvector` Python package's SQLAlchemy
+integration meant embeddings live in the same database and transaction as
+everything else — no second service to run, back up, or keep in sync. The
+unused Qdrant scaffold was removed rather than left as dead-but-plausible
+infrastructure.
+
+**Bare skill-to-skill embedding comparison was tested and rejected — this
+mattered enough to check before writing any scoring code.** The obvious way to
+fix "Vector Databases" not literally matching "FAISS" would be to embed each
+missing skill and each of the resume's skills, then treat a high cosine
+similarity as a match. Empirically, this doesn't work with a general-purpose
+sentence embedding model: `Python <-> JavaScript` (unrelated) scored *higher*
+(0.72-0.85 across several prompt templates) than `Vector Databases <-> FAISS`
+(the exact case being fixed, 0.49-0.78). These models capture broad topical
+similarity ("both are tech terms") far more reliably than precise
+category-vs-specific-instance relationships, which is a different kind of
+question. Whole-*document* comparison, by contrast, separates cleanly — a
+matching resume/role pair landed at 0.85, a wrong-field resume at 0.60,
+unrelated text at 0.39, correctly ordered and workable. That's why semantic
+matching here compares whole profile/role text only, not individual skills;
+Day 3's literal `missing_skills` list is unchanged and still exact-match.
+
+**Raw cosine similarity needed rescaling to read as a 0-100 score.** BGE-small
+doesn't spread related text across the full 0-1 range — even unrelated text
+lands around 0.39, so a plain `similarity * 100` would make an irrelevant
+resume look like a 39% match. `_score_semantic` rescales using an empirically
+chosen floor (0.35) and ceiling (0.90) derived from the calibration points
+above, clamped to 0-100. This is a reasonable estimate, not a rigorously tuned
+threshold — Day 7's evaluation benchmark (Precision/Recall/NDCG@K against
+keyword vs. embedding vs. hybrid matching) is the right place to refine it
+against labelled data if it turns out to need adjustment.
+
+**A linked JD's embedding blends with the role's, it doesn't replace it** —
+same "extend, don't replace" philosophy as the Day 3 skill-vocabulary merge.
+When both exist, the two embeddings are averaged before comparing to the
+resume; when only one exists, that one is used directly.
+
+**Custom roles get their embedding backfilled lazily.** Seeded system roles are
+embedded up front (`app/db/seed.py`), but a role created via `POST /job-roles`
+isn't — `scoring_service.py` computes and persists one the first time that role
+is actually scored against, so there's no separate "remember to embed new
+roles" step to forget.
+
+**The embedding model is warmed up at startup, and its import is lazy for a
+concrete reason.** `sentence-transformers` transitively imports `torch`, which
+takes several seconds. Importing it at module level in
+`app/services/embedding/bge_provider.py` — even before anything called
+`get_embedding_provider()` — added that cost to *every* import of the module,
+including `app.main`, Alembic runs, and test collection: a 43-second `import
+app.main` was caught and fixed by moving the `sentence_transformers` import
+inside `BgeEmbeddingProvider.__init__`, where it's paid exactly once, when the
+provider is actually constructed. That construction now happens deliberately at
+app startup (`WARM_UP_EMBEDDING_MODEL`, default on) so the first real resume
+score isn't the request that eats a multi-second cold load.
+
+**Tests fake the embedding provider the same way they fake the LLM.**
+`FakeEmbeddingProvider` (`tests/conftest.py`) produces deterministic,
+unit-length vectors seeded from a hash of the input text — enough to test that
+`semantic_score` gets computed, persisted, and correctly folded into
+`final_score`, without downloading a model or asserting on real semantic
+quality (that was validated separately, against the real model, in the
+calibration work described above).
+
 ---
 
 ## Project layout
@@ -417,19 +524,21 @@ was green throughout; only a live call surfaced it.
 ├── backend/
 │   ├── alembic/               # async migration env + versions
 │   ├── scripts/               # sample-resume generator (incl. a hand-rolled valid PDF)
-│   ├── tests/                 # 150 tests against a real Postgres
+│   ├── tests/                 # 174 tests against a real Postgres
 │   └── app/
 │       ├── api/v1/endpoints/  # health, job_roles, resumes, batches, job_descriptions
-│       ├── core/              # settings, logging, error handling
+│       ├── core/              # settings, logging, error handling, constants.py (EMBEDDING_DIMENSIONS)
 │       ├── data/              # job_roles_seed.json
-│       ├── db/                # base, session, seeder
+│       ├── db/                # base, session, seeder (embeds new/changed roles)
 │       ├── models/            # SQLAlchemy models + enums (incl. resume_score.py)
 │       ├── schemas/           # Pydantic request/response + parsed-data models
 │       └── services/
 │           ├── llm/                 # LLMProvider interface, GroqProvider, factory
+│           ├── embedding/            # EmbeddingProvider interface, BgeEmbeddingProvider, factory
+│           ├── embedding_text.py     # builds the text each entity type embeds
 │           ├── text_extraction.py
 │           ├── parsing_service.py   # orchestrates extraction -> LLM -> persist -> score
-│           ├── scoring_service.py   # ATS keyword coverage, skill match, experience fit
+│           ├── scoring_service.py   # ATS + skill + experience + semantic scoring
 │           ├── file_validation.py
 │           ├── storage.py
 │           └── resume_service.py
@@ -444,16 +553,16 @@ was green throughout; only a live call surfaced it.
 
 | Table | Role |
 | --- | --- |
-| `job_roles` | Catalogue of screenable positions, skills, ATS keywords, weights |
-| `job_descriptions` | Recruiter-supplied JDs — `raw_text` + `parsed_data`, populated on creation |
+| `job_roles` | Catalogue of screenable positions, skills, ATS keywords, weights, `embedding` |
+| `job_descriptions` | Recruiter-supplied JDs — `raw_text` + `parsed_data` + `embedding` |
 | `candidates` | People — created/refreshed by resume parsing |
-| `resumes` | Uploaded files — `raw_text` + `parsed_data` populated by parsing |
-| `resume_scores` | One row per resume — ATS/skill/experience scores (Day 3), semantic + final score (Days 4-5, null for now) |
+| `resumes` | Uploaded files — `raw_text` + `parsed_data` + `embedding` |
+| `resume_scores` | One row per resume — ATS/skill/experience/semantic/final scores; `category` (Day 5) still null |
 | `screening_batches` | A recruiter's bulk run; groups resumes for ranking |
 
-Columns and tables for Days 4-5 (`semantic_score`, `final_score`, `category` on
-`resume_scores`) already exist as nullable, so those days add logic rather than
-destructive migrations.
+`embedding` columns are `vector(384)` (pgvector), populated by Day 4. `category`
+on `resume_scores` is the only column still waiting on its day — Day 5 adds
+logic, not another migration.
 
 ## Troubleshooting
 
@@ -479,6 +588,18 @@ got null"** — a new field was added to `ParsedResumeData` or
 `list[...] | None`. Groq's own schema validation rejects a `null` response
 against a schema that only allows an array. Type it as `list[T] | None` and add
 it to that model's `_null_list_becomes_empty` validator — see "Design notes."
+
+**`semantic_score` is `null`, or app startup logs "Embedding model warm-up
+failed"** — the model couldn't load. Check Hugging Face Hub connectivity (first
+run needs to download ~130MB; subsequent runs use the local cache but still
+check for updates). Set `WARM_UP_EMBEDDING_MODEL=false` to boot without it
+temporarily — scores still compute, just without the semantic component,
+identically to how `final_score` behaves when a role has no embedding yet.
+
+**A plain import of `app.main` (or running any test) suddenly takes 30-40+
+seconds** — something reintroduced a module-level `import sentence_transformers`
+(or `torch`) outside `BgeEmbeddingProvider.__init__`. That import must stay
+lazy — see "Design notes" for why this exact regression already happened once.
 
 **Tests hang or fail at teardown with "Event loop is closed" (Windows only)** —
 a known bad interaction between Windows' default `ProactorEventLoop` and

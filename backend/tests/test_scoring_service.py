@@ -250,6 +250,189 @@ class TestFinalScore:
         assert score.final_score == pytest.approx(66.7, abs=0.1)
 
 
+class TestScoreOverallWithSemantic:
+    """Pure math, no DB needed — exercises the weighting logic directly."""
+
+    def test_includes_semantic_when_present(self) -> None:
+        result = scoring_service._score_overall(
+            ats_score=100.0,
+            required_skill_match=0.0,
+            experience_match=100.0,
+            semantic_score=50.0,
+            weights={"ats": 0.2, "required_skills": 0.3, "semantic": 0.3, "experience": 0.2},
+        )
+        # (100*.2 + 0*.3 + 50*.3 + 100*.2) / 1.0 = 55.0
+        assert result == 55.0
+
+    def test_drops_semantic_share_when_none(self) -> None:
+        result = scoring_service._score_overall(
+            ats_score=100.0,
+            required_skill_match=0.0,
+            experience_match=100.0,
+            semantic_score=None,
+            weights={"ats": 0.2, "required_skills": 0.3, "semantic": 0.3, "experience": 0.2},
+        )
+        # renormalised over ats+required+experience (0.7 total weight)
+        assert result == pytest.approx(57.1, abs=0.1)
+
+
+class TestScoreSemanticMath:
+    """Pure math, no DB needed."""
+
+    def test_identical_vectors_score_100(self) -> None:
+        vector = [1.0, 0.0, 0.0]
+        assert scoring_service._score_semantic(vector, vector) == 100.0
+
+    def test_orthogonal_vectors_clamp_to_zero(self) -> None:
+        # similarity=0.0, below the 0.35 floor -> clamps rather than going negative
+        assert scoring_service._score_semantic([1.0, 0.0], [0.0, 1.0]) == 0.0
+
+    def test_similarity_at_ceiling_scores_100(self) -> None:
+        # Two unit vectors 90% aligned by construction (dot product = 0.9).
+        a = [1.0, 0.0]
+        b = [0.9, (1 - 0.9**2) ** 0.5]
+        assert scoring_service._score_semantic(a, b) == 100.0
+
+
+class TestAverageVector:
+    def test_averages_elementwise(self) -> None:
+        assert scoring_service._average_vector([[1.0, 2.0], [3.0, 4.0]]) == [2.0, 3.0]
+
+    def test_single_vector_is_unchanged(self) -> None:
+        assert scoring_service._average_vector([[1.0, 2.0]]) == [1.0, 2.0]
+
+
+class TestSemanticScoreIntegration:
+    async def test_computes_and_persists_a_semantic_score(
+        self, session, parsing_env, fake_embeddings
+    ) -> None:
+        role = await _make_role(
+            session,
+            required_skills=["Python"],
+            scoring_weights={"ats": 0.2, "required_skills": 0.3, "semantic": 0.3, "experience": 0.2},
+        )
+        resume = await _make_resume(
+            session,
+            role=role,
+            raw_text="x",
+            parsed_data={"skills": ["Python"], "summary": "An experienced engineer."},
+        )
+
+        await scoring_service.score_resume(resume.id)
+        await session.refresh(resume)
+        await session.refresh(role)
+
+        score = (
+            await session.execute(
+                select(ResumeScore).where(ResumeScore.resume_id == resume.id)
+            )
+        ).scalar_one()
+        assert score.semantic_score is not None
+        assert 0.0 <= score.semantic_score <= 100.0
+        assert resume.embedding is not None
+        assert role.embedding is not None  # backfilled since this role had none
+
+    async def test_semantic_score_is_none_without_a_role(
+        self, session, parsing_env
+    ) -> None:
+        resume = Resume(
+            job_role_id=None,
+            upload_source="candidate",
+            original_filename="cv.txt",
+            stored_filename="x.txt",
+            storage_path="2026/01/x.txt",
+            file_extension=".txt",
+            content_type="text/plain",
+            file_size_bytes=1,
+            content_hash=str(uuid.uuid4()),
+            raw_text="x",
+            parsed_data={"skills": ["Python"], "summary": "A profile."},
+            parse_status="parsed",
+        )
+        session.add(resume)
+        await session.commit()
+
+        await scoring_service.score_resume(resume.id)
+
+        score = (
+            await session.execute(
+                select(ResumeScore).where(ResumeScore.resume_id == resume.id)
+            )
+        ).scalar_one()
+        assert score.semantic_score is None
+
+    async def test_identical_profile_and_role_text_scores_perfectly(
+        self, session, parsing_env, fake_embeddings
+    ) -> None:
+        from app.services.embedding_text import build_resume_embedding_text
+
+        parsed_data = {"skills": ["Python"], "summary": "A very specific profile string."}
+        resume_text = build_resume_embedding_text(parsed_data)
+
+        role = await _make_role(session, required_skills=["Python"])
+        # Pre-seed the role's embedding with exactly what the fake provider
+        # will deterministically produce for the resume's own profile text,
+        # so raw cosine similarity is exactly 1.0 — a fully controlled,
+        # non-flaky way to test the "great match" end of the scale.
+        role.embedding = fake_embeddings._vector(resume_text)
+        await session.commit()
+
+        resume = await _make_resume(session, role=role, raw_text="x", parsed_data=parsed_data)
+
+        await scoring_service.score_resume(resume.id)
+
+        score = (
+            await session.execute(
+                select(ResumeScore).where(ResumeScore.resume_id == resume.id)
+            )
+        ).scalar_one()
+        assert score.semantic_score == 100.0
+
+    async def test_role_and_jd_embeddings_are_averaged(
+        self, session, parsing_env, fake_embeddings
+    ) -> None:
+        role = await _make_role(session, required_skills=["Python"])
+        role.embedding = fake_embeddings._vector("role text")
+        jd = JobDescription(
+            title="AI Engineer",
+            raw_text="...",
+            parsed_data={"required_skills": []},
+            embedding=fake_embeddings._vector("jd text"),
+        )
+        session.add(jd)
+        await session.flush()
+
+        batch = ScreeningBatch(
+            job_role_id=role.id,
+            job_description_id=jd.id,
+            name="batch",
+            status=BatchStatus.CREATED,
+        )
+        session.add(batch)
+        await session.commit()
+
+        resume = await _make_resume(
+            session,
+            role=role,
+            raw_text="x",
+            parsed_data={"skills": ["Python"], "summary": "profile"},
+            batch_id=batch.id,
+        )
+
+        await scoring_service.score_resume(resume.id)
+
+        score = (
+            await session.execute(
+                select(ResumeScore).where(ResumeScore.resume_id == resume.id)
+            )
+        ).scalar_one()
+        # Not comparing an exact value (the merge math is already covered by
+        # TestAverageVector) — just confirming the JD path is actually taken
+        # rather than silently falling back to the role alone.
+        assert score.semantic_score is not None
+        assert score.job_description_id == jd.id
+
+
 class TestSuggestions:
     async def test_suggests_missing_skills_and_experience(
         self, session, parsing_env

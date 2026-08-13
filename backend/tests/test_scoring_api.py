@@ -76,7 +76,7 @@ class TestManualRescore:
         second = response.json()
 
         assert second["score"] is not None
-        assert second["score"]["scored_at"] >= first["score"]["scored_at"]
+        assert second["score"]["scored_at"] > first["score"]["scored_at"]
 
     async def test_rejects_scoring_an_unparsed_resume(
         self, client: AsyncClient, ai_role_id: str, fake_llm: FakeLLMProvider, session

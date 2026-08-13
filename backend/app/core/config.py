@@ -45,11 +45,15 @@ class Settings(BaseSettings):
     SEED_ON_STARTUP: bool = True
     RUN_MIGRATIONS_ON_STARTUP: bool = False
     PARSE_ON_UPLOAD: bool = True
+    WARM_UP_EMBEDDING_MODEL: bool = True
 
     # --- LLM (Day 2 structured extraction) ---
     GROQ_API_KEY: str | None = None
     GROQ_MODEL: str = "llama-3.3-70b-versatile"
     LLM_REQUEST_TIMEOUT_SECONDS: float = 30.0
+
+    # --- Embeddings (Day 4 semantic matching) ---
+    EMBEDDING_MODEL: str = "BAAI/bge-small-en-v1.5"
 
     # --- CORS ---
     # NoDecode stops pydantic-settings from JSON-parsing the raw env value, so

@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import Boolean, Float, Index, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.constants import EMBEDDING_DIMENSIONS
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.enums import ExperienceLevel
 
@@ -51,6 +53,14 @@ class JobRole(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # e.g. {"ats": 0.20, "required_skills": 0.35, "semantic": 0.25, "experience": 0.20}
     scoring_weights: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, default=dict
+    )
+
+    # --- Day 4: semantic matching ---
+    # Embedding of title + summary + description + skills + responsibilities.
+    # Computed at seed time (and only recomputed if that content changes) —
+    # see app/db/seed.py and app/services/embedding_text.py.
+    embedding: Mapped[list[float] | None] = mapped_column(
+        Vector(EMBEDDING_DIMENSIONS), nullable=True
     )
 
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

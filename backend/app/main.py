@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -14,6 +15,7 @@ from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
 from app.db.seed import run_seed
 from app.db.session import engine
+from app.services.embedding import get_embedding_provider
 from app.services.storage import resume_storage
 
 configure_logging()
@@ -38,6 +40,22 @@ async def lifespan(app: FastAPI):
 
     resume_storage.ensure_ready()
     logger.info("Resume storage ready at %s", resume_storage.root)
+
+    if settings.WARM_UP_EMBEDDING_MODEL:
+        try:
+            # Loading BGE-small takes several seconds (model weights from
+            # disk, or a one-time download). Paying that cost here means the
+            # first real resume score isn't the one that eats it — and
+            # run_seed() below needs the model ready anyway for any role
+            # missing an embedding.
+            await asyncio.to_thread(get_embedding_provider)
+            logger.info("Embedding model ready.")
+        except Exception as exc:  # noqa: BLE001 - semantic scoring degrades, app still boots
+            logger.warning(
+                "Embedding model warm-up failed (%s). Semantic scoring will be "
+                "unavailable until it loads successfully.",
+                exc,
+            )
 
     if settings.SEED_ON_STARTUP:
         try:

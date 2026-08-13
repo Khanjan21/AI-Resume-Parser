@@ -179,6 +179,13 @@ async def rescore_resume(resume_id: uuid.UUID, session: DbSession) -> ResumeDeta
 
     await score_resume(resume.id)
 
+    # `score_resume` commits through its own session (it must be able to run
+    # standalone as a background task), so this session's identity map still
+    # holds the pre-update `resume`/`resume.score` loaded above. A plain
+    # re-select does not overwrite already-populated attributes on an
+    # identity-mapped instance, so without expiring first this would return
+    # the stale score instead of what was just computed.
+    session.expire_all()
     rescored = await get_resume_or_404(session, resume_id)
     return ResumeDetail.model_validate(rescored)
 

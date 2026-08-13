@@ -6,11 +6,13 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.constants import EMBEDDING_DIMENSIONS
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.enums import ParseStatus
 
@@ -49,6 +51,13 @@ class JobDescription(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     parse_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     parsed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # --- Day 4: semantic matching ---
+    # Embedding of the JD's summary + required/preferred skills + responsibilities.
+    # Computed right after parsing succeeds, alongside parsed_data.
+    embedding: Mapped[list[float] | None] = mapped_column(
+        Vector(EMBEDDING_DIMENSIONS), nullable=True
+    )
 
     job_role: Mapped["JobRole | None"] = relationship(back_populates="job_descriptions")
     batches: Mapped[list["ScreeningBatch"]] = relationship(

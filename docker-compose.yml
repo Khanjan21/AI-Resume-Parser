@@ -1,6 +1,8 @@
 services:
   postgres:
-    # pgvector-enabled image so Day 4 can optionally store embeddings in Postgres
+    # pgvector-enabled image: Day 4's semantic matching stores and queries
+    # embeddings directly in this database (a `vector` extension + columns),
+    # not in a separate vector store — see the README's Day 4 section for why.
     image: pgvector/pgvector:pg16
     container_name: resume_postgres
     restart: unless-stopped
@@ -17,19 +19,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-
-  # Vector store — used from Day 4 (semantic matching) onward.
-  # Started only with: docker compose --profile vector up -d
-  qdrant:
-    image: qdrant/qdrant:v1.12.4
-    container_name: resume_qdrant
-    restart: unless-stopped
-    profiles: ["vector"]
-    ports:
-      - "6333:6333"
-      - "6334:6334"
-    volumes:
-      - qdrant_data:/qdrant/storage
 
   backend:
     build:
@@ -56,5 +45,4 @@ services:
 
 volumes:
   postgres_data:
-  qdrant_data:
   resume_storage:

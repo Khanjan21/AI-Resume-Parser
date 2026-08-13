@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     DateTime,
     ForeignKey,
@@ -19,6 +20,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.constants import EMBEDDING_DIMENSIONS
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.enums import AnalysisStatus, ParseStatus, UploadSource
 
@@ -93,6 +95,14 @@ class Resume(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         String(20), nullable=False, default=AnalysisStatus.PENDING, index=True
     )
     analysis_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # --- Day 4: semantic matching ---
+    # Embedding of the resume's profile text (summary + skills + experience +
+    # education, built from parsed_data — not the raw file text, which is too
+    # noisy). Computed and overwritten on every (re-)score.
+    embedding: Mapped[list[float] | None] = mapped_column(
+        Vector(EMBEDDING_DIMENSIONS), nullable=True
+    )
 
     candidate: Mapped["Candidate | None"] = relationship(back_populates="resumes")
     job_role: Mapped["JobRole | None"] = relationship(back_populates="resumes")

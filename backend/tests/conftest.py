@@ -72,6 +72,10 @@ async def test_database() -> AsyncGenerator[None, None]:
 
     engine = create_async_engine(TEST_DB_URL, poolclass=NullPool)
     async with engine.begin() as connection:
+        # Base.metadata.create_all bypasses Alembic (and its migration that
+        # enables this) entirely — without it, creating any `vector(...)`
+        # column fails with "type vector does not exist".
+        await connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await connection.run_sync(Base.metadata.create_all)
     await engine.dispose()
 
@@ -85,11 +89,16 @@ async def test_database() -> AsyncGenerator[None, None]:
 
 
 @pytest_asyncio.fixture(loop_scope="function")
-async def test_engine(test_database):
+async def test_engine(test_database, fake_embeddings):
     """A fresh engine bound to the running test's event loop.
 
     Wipes and re-seeds the schema first, so every test starts from the same
-    known state: six system job roles and nothing else.
+    known state: six system job roles and nothing else. Seeding now computes
+    an embedding per role — `fake_embeddings` must be set up *before* that
+    runs, which is exactly why it's a dependency here rather than only on
+    `client`/`parsing_env`: those patch scoring/parsing's usage, but seeding
+    happens inside this fixture's own body, before either of those get a
+    chance to apply anything.
 
     loop_scope="function" matters here: the ini default is "session", but any
     fixture that hands out a *live* connection/session the test body will use
@@ -176,6 +185,50 @@ def fake_llm(monkeypatch) -> FakeLLMProvider:
     monkeypatch.setattr("app.services.parsing_service.get_llm_provider", lambda: provider)
     monkeypatch.setattr(settings, "GROQ_API_KEY", "test-key")
     monkeypatch.setattr(settings, "PARSE_ON_UPLOAD", True)
+    return provider
+
+
+class FakeEmbeddingProvider:
+    """Stands in for BgeEmbeddingProvider — no model download, no ~7s load.
+
+    Vectors are deterministic (seeded from a hash of the text) and unit-length,
+    so identical text always embeds identically and cosine similarity math
+    behaves correctly — but they carry none of the real model's semantic
+    meaning. That's fine here: this fixture verifies the *wiring* (does a
+    semantic_score get computed, does it feed into final_score, does an
+    embedding get persisted and reused), not similarity quality — the real
+    model's actual behaviour was calibrated separately against known text
+    pairs (see the Day 4 section in the README) rather than re-verified here.
+    """
+
+    dimensions = 384
+
+    def __init__(self) -> None:
+        self.calls: list[list[str]] = []
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        self.calls.append(list(texts))
+        return [self._vector(text) for text in texts]
+
+    def _vector(self, text: str) -> list[float]:
+        import hashlib
+        import random
+
+        seed = int(hashlib.sha256(text.encode("utf-8")).hexdigest(), 16)
+        rng = random.Random(seed)
+        raw = [rng.uniform(-1.0, 1.0) for _ in range(self.dimensions)]
+        norm = sum(x * x for x in raw) ** 0.5
+        return [x / norm for x in raw]
+
+
+@pytest.fixture
+def fake_embeddings(monkeypatch) -> FakeEmbeddingProvider:
+    """Replaces the real embedding provider everywhere Day 4 code looks it up:
+    role seeding, JD parsing, and resume scoring."""
+    provider = FakeEmbeddingProvider()
+    monkeypatch.setattr("app.db.seed.get_embedding_provider", lambda: provider)
+    monkeypatch.setattr("app.services.scoring_service.get_embedding_provider", lambda: provider)
+    monkeypatch.setattr("app.services.parsing_service.get_embedding_provider", lambda: provider)
     return provider
 
 

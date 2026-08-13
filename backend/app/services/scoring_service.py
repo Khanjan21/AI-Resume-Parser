@@ -1,10 +1,10 @@
-"""Day 3: ATS keyword coverage, required-skill match, experience fit.
+"""Day 3 (ATS keyword coverage, required-skill match, experience fit) plus
+Day 4's semantic layer (whole-profile embedding similarity via pgvector).
 
-Pure rule-based scoring — no LLM, no embeddings (that's Day 4's semantic
-layer). Runs as a `BackgroundTask` straight after a resume finishes parsing,
-mirroring `parsing_service`: it opens its own database session rather than
-reusing the caller's, since by the time it runs the original request has
-already returned its response.
+Runs as a `BackgroundTask` straight after a resume finishes parsing, mirroring
+`parsing_service`: it opens its own database session rather than reusing the
+caller's, since by the time it runs the original request has already returned
+its response.
 """
 
 from __future__ import annotations
@@ -22,6 +22,11 @@ from app.models.job_role import JobRole
 from app.models.resume import Resume
 from app.models.resume_score import ResumeScore
 from app.models.screening_batch import ScreeningBatch
+from app.services.embedding import EmbeddingError, get_embedding_provider
+from app.services.embedding_text import (
+    build_job_role_embedding_text,
+    build_resume_embedding_text,
+)
 
 logger = get_logger(__name__)
 
@@ -30,10 +35,15 @@ logger = get_logger(__name__)
 _MAX_SUGGESTIONS = 6
 _MAX_MISSING_SKILLS_IN_SUGGESTION = 5
 
-# The components already available today. `semantic` (Day 4) isn't in here —
-# its share of the configured weights gets dropped and the rest renormalised,
-# rather than every score being capped until that lands.
-_SCORED_COMPONENTS = ("ats", "required_skills", "experience")
+# Empirically calibrated against BAAI/bge-small-en-v1.5 (see the Day 4 section
+# in the README): a matching resume/role pair lands around 0.85 raw cosine
+# similarity, a wrong-field resume around 0.60, unrelated text around 0.39.
+# Raw cosine similarity from this model never spans the full 0-1 range for
+# related text, so a plain `similarity * 100` would make even irrelevant
+# resumes look like a ~40% match. This floor/ceiling rescale stretches the
+# realistic range into an intuitive 0-100 score instead.
+_SEMANTIC_SIMILARITY_FLOOR = 0.35
+_SEMANTIC_SIMILARITY_CEILING = 0.90
 
 
 def _normalise(skill: str) -> str:
@@ -91,12 +101,41 @@ def _score_experience(
     return round(max(0.0, candidate_years / min_years) * 100, 1)
 
 
-def _score_overall(
-    *, ats_score: float, required_skill_match: float, experience_match: float, weights: dict
-) -> float:
-    """Blend today's components using a role's configured weights.
+def _score_semantic(resume_vector: list[float], target_vector: list[float]) -> float:
+    """Cosine similarity, rescaled into an intuitive 0-100 range.
 
-    A role with no configured weights (e.g. a bare-bones custom role) falls
+    Both vectors come out of the embedding model already normalised, so their
+    dot product *is* the cosine similarity — no separate normalisation step
+    needed here.
+    """
+    similarity = sum(a * b for a, b in zip(resume_vector, target_vector))
+    span = _SEMANTIC_SIMILARITY_CEILING - _SEMANTIC_SIMILARITY_FLOOR
+    scaled = (similarity - _SEMANTIC_SIMILARITY_FLOOR) / span * 100
+    return round(max(0.0, min(100.0, scaled)), 1)
+
+
+def _average_vector(vectors: list[list[float]]) -> list[float]:
+    """Element-wise mean — used when both a role and a linked JD have an
+    embedding, so scoring reflects both rather than picking one arbitrarily."""
+    length = len(vectors)
+    return [sum(v[i] for v in vectors) / length for i in range(len(vectors[0]))]
+
+
+def _score_overall(
+    *,
+    ats_score: float,
+    required_skill_match: float,
+    experience_match: float,
+    semantic_score: float | None,
+    weights: dict,
+) -> float:
+    """Blend the available components using a role's configured weights.
+
+    `semantic_score` is only present once an embedding comparison succeeded;
+    when it's None (no role/JD embedding available yet), its configured
+    weight share is dropped and the rest renormalised, rather than the score
+    being capped for a reason that has nothing to do with the resume. A role
+    with no configured weights at all (e.g. a bare-bones custom role) falls
     back to a plain average rather than dividing by zero.
     """
     components = {
@@ -104,13 +143,16 @@ def _score_overall(
         "required_skills": required_skill_match,
         "experience": experience_match,
     }
-    component_weights = {key: float(weights.get(key, 0.0)) for key in _SCORED_COMPONENTS}
+    if semantic_score is not None:
+        components["semantic"] = semantic_score
+
+    component_weights = {key: float(weights.get(key, 0.0)) for key in components}
     total_weight = sum(component_weights.values())
 
     if total_weight <= 0:
         return round(sum(components.values()) / len(components), 1)
 
-    weighted_sum = sum(components[key] * component_weights[key] for key in _SCORED_COMPONENTS)
+    weighted_sum = sum(components[key] * component_weights[key] for key in components)
     return round(weighted_sum / total_weight, 1)
 
 
@@ -196,6 +238,56 @@ async def _resolve_job_description(session, resume: Resume) -> JobDescription | 
     return await session.get(JobDescription, batch.job_description_id)
 
 
+async def _compute_semantic_score(
+    *,
+    resume: Resume,
+    job_role: JobRole | None,
+    job_description: JobDescription | None,
+    parsed: dict,
+) -> float | None:
+    """Embeds the resume's profile text, backfills the role's embedding if
+    it's missing (custom roles created via the API aren't embedded at
+    creation time), and returns a 0-100 similarity score — or None if there's
+    nothing usable to compare against yet (e.g. a role whose embedding failed
+    to compute, or a resume with no extractable profile text).
+    """
+    provider = get_embedding_provider()
+
+    resume_text = build_resume_embedding_text(parsed)
+    resume.embedding = (
+        (await provider.embed([resume_text]))[0] if resume_text.strip() else None
+    )
+
+    if job_role is not None and job_role.embedding is None:
+        role_text = build_job_role_embedding_text(
+            title=job_role.title,
+            summary=job_role.summary,
+            description=job_role.description,
+            required_skills=job_role.required_skills,
+            preferred_skills=job_role.preferred_skills,
+            responsibilities=job_role.responsibilities,
+        )
+        job_role.embedding = (await provider.embed([role_text]))[0]
+
+    # If a batch links a specific JD, blend its embedding with the role's
+    # rather than picking one — same "extend, don't replace" philosophy
+    # already used for merging required-skill lists.
+    targets = [
+        vector
+        for vector in (
+            job_role.embedding if job_role is not None else None,
+            job_description.embedding if job_description is not None else None,
+        )
+        if vector is not None
+    ]
+
+    if resume.embedding is None or not targets:
+        return None
+
+    target_vector = targets[0] if len(targets) == 1 else _average_vector(targets)
+    return _score_semantic(resume.embedding, target_vector)
+
+
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -248,10 +340,17 @@ async def score_resume(resume_id: uuid.UUID) -> None:
                 resume_skills, required_skills, preferred_skills
             )
             experience_match = _score_experience(candidate_years, min_years, max_years)
+            semantic_score = await _compute_semantic_score(
+                resume=resume,
+                job_role=job_role,
+                job_description=job_description,
+                parsed=parsed,
+            )
             final_score = _score_overall(
                 ats_score=ats_score,
                 required_skill_match=required_skill_match,
                 experience_match=experience_match,
+                semantic_score=semantic_score,
                 weights=job_role.scoring_weights if job_role else {},
             )
 
@@ -282,6 +381,7 @@ async def score_resume(resume_id: uuid.UUID) -> None:
             score.missing_skills = missing_skills
             score.experience_match = experience_match
             score.candidate_experience_years = candidate_years
+            score.semantic_score = semantic_score
             score.final_score = final_score
             score.suggestions = suggestions
             score.scored_at = _utcnow()
@@ -291,6 +391,11 @@ async def score_resume(resume_id: uuid.UUID) -> None:
 
             resume.analysis_status = AnalysisStatus.COMPLETED
             resume.analysis_error = None
+
+        except EmbeddingError as exc:
+            logger.info("Scoring failed for resume %s: %s", resume_id, exc)
+            resume.analysis_status = AnalysisStatus.FAILED
+            resume.analysis_error = str(exc)[:2000]
 
         except Exception as exc:  # noqa: BLE001 - one bad resume must not crash the worker
             logger.exception("Unexpected scoring failure for resume %s", resume_id)
