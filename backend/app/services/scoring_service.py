@@ -16,7 +16,7 @@ from sqlalchemy import select
 
 from app.core.logging import get_logger
 from app.db.session import AsyncSessionLocal
-from app.models.enums import AnalysisStatus
+from app.models.enums import AnalysisStatus, ShortlistCategory
 from app.models.job_description import JobDescription
 from app.models.job_role import JobRole
 from app.models.resume import Resume
@@ -44,6 +44,13 @@ _MAX_MISSING_SKILLS_IN_SUGGESTION = 5
 # realistic range into an intuitive 0-100 score instead.
 _SEMANTIC_SIMILARITY_FLOOR = 0.35
 _SEMANTIC_SIMILARITY_CEILING = 0.90
+
+# Day 5: recruiter-facing shortlist bucket, derived from `final_score`. Fixed
+# global cutoffs rather than a per-role config — nothing in the spec called
+# for per-role tuning, and these can move if Day 7's evaluation benchmark
+# shows they should, without touching the role catalogue.
+_STRONG_MATCH_THRESHOLD = 75.0
+_CONSIDER_THRESHOLD = 45.0
 
 
 def _normalise(skill: str) -> str:
@@ -154,6 +161,22 @@ def _score_overall(
 
     weighted_sum = sum(components[key] * component_weights[key] for key in components)
     return round(weighted_sum / total_weight, 1)
+
+
+def _categorize(final_score: float | None) -> str | None:
+    """Buckets a resume into a shortlist category for the recruiter view.
+
+    Stays `None` alongside `final_score` when nothing could be computed yet
+    (e.g. a role with no configured weights and no components at all) —
+    there's no reasonable bucket for a resume that hasn't been scored.
+    """
+    if final_score is None:
+        return None
+    if final_score >= _STRONG_MATCH_THRESHOLD:
+        return ShortlistCategory.STRONG_MATCH
+    if final_score >= _CONSIDER_THRESHOLD:
+        return ShortlistCategory.CONSIDER
+    return ShortlistCategory.WEAK_MATCH
 
 
 def _build_suggestions(
@@ -383,6 +406,7 @@ async def score_resume(resume_id: uuid.UUID) -> None:
             score.candidate_experience_years = candidate_years
             score.semantic_score = semantic_score
             score.final_score = final_score
+            score.category = _categorize(final_score)
             score.suggestions = suggestions
             score.scored_at = _utcnow()
 

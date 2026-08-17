@@ -16,9 +16,9 @@ from app.api.deps import (
 )
 from app.core.config import settings
 from app.core.exceptions import ValidationError
-from app.models.enums import BatchStatus
+from app.models.enums import BatchStatus, ShortlistCategory
 from app.models.screening_batch import ScreeningBatch
-from app.schemas.batch import BatchCreate, BatchDetail, BatchRead
+from app.schemas.batch import BatchCategoryCounts, BatchCreate, BatchDetail, BatchRead
 from app.schemas.common import MessageResponse, Page, PageMeta
 from app.schemas.job_role import JobRoleSummary
 from app.schemas.resume import BulkUploadResponse, ResumeDetail
@@ -89,6 +89,29 @@ async def list_batches(
     )
 
 
+def _rank_key(resume) -> tuple:
+    """Ranked by `final_score` descending (Day 5); resumes with no score yet
+    (still parsing/scoring, or failed) sort last, oldest-uploaded first among
+    themselves so the ordering stays stable rather than shuffling on refresh."""
+    final_score = resume.score.final_score if resume.score else None
+    return (final_score is None, -(final_score or 0.0), resume.created_at)
+
+
+def _category_counts(resumes) -> BatchCategoryCounts:
+    counts = BatchCategoryCounts()
+    for resume in resumes:
+        category = resume.score.category if resume.score else None
+        if category == ShortlistCategory.STRONG_MATCH:
+            counts.strong_match += 1
+        elif category == ShortlistCategory.CONSIDER:
+            counts.consider += 1
+        elif category == ShortlistCategory.WEAK_MATCH:
+            counts.weak_match += 1
+        else:
+            counts.unscored += 1
+    return counts
+
+
 @router.get("/{batch_id}", response_model=BatchDetail, summary="Get a batch with resumes")
 async def get_batch(batch_id: uuid.UUID, session: DbSession) -> BatchDetail:
     batch = await get_batch_or_404(session, batch_id, with_resumes=True)
@@ -97,8 +120,9 @@ async def get_batch(batch_id: uuid.UUID, session: DbSession) -> BatchDetail:
     detail.job_role = JobRoleSummary.model_validate(batch.job_role)
     detail.resumes = [
         ResumeDetail.model_validate(resume)
-        for resume in sorted(batch.resumes, key=lambda item: item.created_at)
+        for resume in sorted(batch.resumes, key=_rank_key)
     ]
+    detail.category_counts = _category_counts(batch.resumes)
     return detail
 
 

@@ -2,6 +2,7 @@ export type ExperienceLevel = 'entry' | 'junior' | 'mid' | 'senior' | 'lead'
 export type ParseStatus = 'pending' | 'processing' | 'parsed' | 'failed'
 export type AnalysisStatus = 'pending' | 'processing' | 'completed' | 'failed'
 export type UploadSource = 'candidate' | 'recruiter'
+export type ShortlistCategory = 'strong_match' | 'consider' | 'weak_match'
 export type BatchStatus =
   | 'created'
   | 'uploading'
@@ -84,7 +85,7 @@ export interface ResumeScore {
   suggestions: string[]
   semantic_score: number | null
   final_score: number | null
-  category: string | null
+  category: ShortlistCategory | null
   scored_at: string
 }
 
@@ -131,6 +132,19 @@ export interface Batch {
   completed_at: string | null
   created_at: string
   updated_at: string
+}
+
+export interface BatchCategoryCounts {
+  strong_match: number
+  consider: number
+  weak_match: number
+  unscored: number
+}
+
+export interface BatchDetail extends Batch {
+  job_role: JobRoleSummary | null
+  resumes: ResumeDetail[]
+  category_counts: BatchCategoryCounts
 }
 
 export interface JobDescription {

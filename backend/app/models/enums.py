@@ -62,3 +62,11 @@ class SkillImportance(StrEnum):
     REQUIRED = "required"
     PREFERRED = "preferred"
     NICE_TO_HAVE = "nice_to_have"
+
+
+class ShortlistCategory(StrEnum):
+    """Recruiter-facing shortlist bucket, derived from `final_score` (Day 5)."""
+
+    STRONG_MATCH = "strong_match"
+    CONSIDER = "consider"
+    WEAK_MATCH = "weak_match"

@@ -49,7 +49,10 @@ class Settings(BaseSettings):
 
     # --- LLM (Day 2 structured extraction) ---
     GROQ_API_KEY: str | None = None
-    GROQ_MODEL: str = "llama-3.3-70b-versatile"
+    # Groq decommissioned llama-3.3-70b-versatile; gpt-oss-120b is its
+    # tool-calling-capable replacement on Groq's current catalogue (verified
+    # directly against the API — forced tool_choice returns a clean call).
+    GROQ_MODEL: str = "openai/gpt-oss-120b"
     LLM_REQUEST_TIMEOUT_SECONDS: float = 30.0
 
     # --- Embeddings (Day 4 semantic matching) ---

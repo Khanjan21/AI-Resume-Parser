@@ -384,6 +384,22 @@ h2 {
   animation: badge-pulse 1.4s ease-in-out infinite;
 }
 
+/* --- Shortlist categories (Day 5) --- */
+.badge--strong-match {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.badge--consider {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.badge--weak-match {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
 @keyframes badge-pulse {
   0%, 100% {
     opacity: 1;

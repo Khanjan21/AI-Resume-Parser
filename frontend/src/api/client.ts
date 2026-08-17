@@ -1,6 +1,7 @@
 import type {
   ApiErrorBody,
   Batch,
+  BatchDetail,
   BulkUploadResponse,
   JobDescription,
   JobRoleDetail,
@@ -98,4 +99,6 @@ export const api = {
       body: form,
     })
   },
+
+  getBatch: (batchId: string) => request<BatchDetail>(`/batches/${batchId}`),
 }

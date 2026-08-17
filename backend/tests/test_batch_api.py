@@ -6,6 +6,10 @@ import uuid
 
 from httpx import AsyncClient
 
+from app.core.config import settings
+from app.schemas.parsed_resume import ParsedResumeData
+from tests.conftest import FakeLLMProvider
+
 
 def multi_files(*items: tuple[str, bytes, str]) -> list[tuple[str, tuple]]:
     return [("files", item) for item in items]
@@ -204,3 +208,107 @@ class TestBatchLifecycle:
         assert (await client.delete(f"/api/v1/batches/{batch_id}")).status_code == 200
         assert (await client.get(f"/api/v1/batches/{batch_id}")).status_code == 404
         assert (await client.get(f"/api/v1/resumes/{resume_id}")).status_code == 404
+
+
+class TestBatchRanking:
+    """Day 5: resumes come back ranked by `final_score`, bucketed into a
+    shortlist category, with batch-level counts per category."""
+
+    async def _custom_role(self, client: AsyncClient) -> str:
+        # Weighting only `required_skills` makes `final_score` a pure,
+        # predictable function of skill overlap — untouched by ATS keyword
+        # scanning or the semantic embedding, so category boundaries land
+        # exactly where the test expects.
+        response = await client.post(
+            "/api/v1/job-roles",
+            json={
+                "title": "Ranking Test Role",
+                "required_skills": ["Alpha", "Beta"],
+                "scoring_weights": {"required_skills": 1.0},
+            },
+        )
+        return response.json()["id"]
+
+    async def _upload_one(
+        self, client: AsyncClient, batch_id: str, fake_llm: FakeLLMProvider, filename: str, skills: list[str]
+    ) -> None:
+        fake_llm.response = ParsedResumeData(skills=skills)
+        # Distinct bytes per file — de-duplication is content-hash based and
+        # scoped to the batch, so identical bodies would collide as
+        # "duplicate" regardless of filename.
+        await client.post(
+            f"/api/v1/batches/{batch_id}/resumes",
+            files=[("files", (filename, f"resume content for {filename}".encode(), "text/plain"))],
+        )
+
+    async def test_resumes_are_ranked_by_final_score_descending(
+        self, client: AsyncClient, fake_llm: FakeLLMProvider
+    ) -> None:
+        role_id = await self._custom_role(client)
+        batch = await client.post(
+            "/api/v1/batches", json={"job_role_id": role_id, "name": "ranking"}
+        )
+        batch_id = batch.json()["id"]
+
+        # Uploaded out of score order on purpose, to prove the response is
+        # actually sorted rather than just echoing upload order.
+        await self._upload_one(client, batch_id, fake_llm, "weak.txt", [])
+        await self._upload_one(client, batch_id, fake_llm, "strong.txt", ["Alpha", "Beta"])
+        await self._upload_one(client, batch_id, fake_llm, "consider.txt", ["Alpha"])
+
+        detail = (await client.get(f"/api/v1/batches/{batch_id}")).json()
+
+        filenames = [r["original_filename"] for r in detail["resumes"]]
+        assert filenames == ["strong.txt", "consider.txt", "weak.txt"]
+
+        scores = [r["score"]["final_score"] for r in detail["resumes"]]
+        assert scores == sorted(scores, reverse=True)
+
+        categories = [r["score"]["category"] for r in detail["resumes"]]
+        assert categories == ["strong_match", "consider", "weak_match"]
+
+    async def test_category_counts_reflect_the_batch(
+        self, client: AsyncClient, fake_llm: FakeLLMProvider
+    ) -> None:
+        role_id = await self._custom_role(client)
+        batch = await client.post(
+            "/api/v1/batches", json={"job_role_id": role_id, "name": "counts"}
+        )
+        batch_id = batch.json()["id"]
+
+        await self._upload_one(client, batch_id, fake_llm, "a.txt", ["Alpha", "Beta"])
+        await self._upload_one(client, batch_id, fake_llm, "b.txt", ["Alpha", "Beta"])
+        await self._upload_one(client, batch_id, fake_llm, "c.txt", ["Alpha"])
+        await self._upload_one(client, batch_id, fake_llm, "d.txt", [])
+
+        detail = (await client.get(f"/api/v1/batches/{batch_id}")).json()
+
+        assert detail["category_counts"] == {
+            "strong_match": 2,
+            "consider": 1,
+            "weak_match": 1,
+            "unscored": 0,
+        }
+
+    async def test_unscored_resumes_sort_last_and_count_separately(
+        self, client: AsyncClient, ai_role_id: str, fake_llm: FakeLLMProvider, monkeypatch
+    ) -> None:
+        batch = await client.post(
+            "/api/v1/batches", json={"job_role_id": ai_role_id, "name": "mixed"}
+        )
+        batch_id = batch.json()["id"]
+
+        monkeypatch.setattr(settings, "PARSE_ON_UPLOAD", False)
+        await client.post(
+            f"/api/v1/batches/{batch_id}/resumes",
+            files=[("files", ("unscored.txt", b"resume content", "text/plain"))],
+        )
+
+        monkeypatch.setattr(settings, "PARSE_ON_UPLOAD", True)
+        await self._upload_one(client, batch_id, fake_llm, "scored.txt", ["Python"])
+
+        detail = (await client.get(f"/api/v1/batches/{batch_id}")).json()
+
+        filenames = [r["original_filename"] for r in detail["resumes"]]
+        assert filenames == ["scored.txt", "unscored.txt"]
+        assert detail["category_counts"]["unscored"] == 1

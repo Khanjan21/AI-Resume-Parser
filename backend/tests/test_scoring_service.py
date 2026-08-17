@@ -7,7 +7,7 @@ import uuid
 import pytest
 from sqlalchemy import select
 
-from app.models.enums import AnalysisStatus, BatchStatus
+from app.models.enums import AnalysisStatus, BatchStatus, ShortlistCategory
 from app.models.job_description import JobDescription
 from app.models.job_role import JobRole
 from app.models.resume import Resume
@@ -230,6 +230,7 @@ class TestFinalScore:
         assert score.experience_match == 100.0
         # (100*0.2 + 0*0.3 + 100*0.2) / (0.2+0.3+0.2) = 40/0.7 = 57.14...
         assert score.final_score == pytest.approx(57.1, abs=0.1)
+        assert score.category == ShortlistCategory.CONSIDER
 
     async def test_falls_back_to_plain_average_with_no_configured_weights(
         self, session, parsing_env
@@ -248,6 +249,26 @@ class TestFinalScore:
         ).scalar_one()
         # ats=100, required_skill_match=0, experience_match=100 -> plain average
         assert score.final_score == pytest.approx(66.7, abs=0.1)
+        assert score.category == ShortlistCategory.CONSIDER
+
+
+class TestCategorize:
+    """Pure math, no DB needed."""
+
+    def test_strong_match_at_and_above_threshold(self) -> None:
+        assert scoring_service._categorize(75.0) == ShortlistCategory.STRONG_MATCH
+        assert scoring_service._categorize(100.0) == ShortlistCategory.STRONG_MATCH
+
+    def test_consider_between_thresholds(self) -> None:
+        assert scoring_service._categorize(45.0) == ShortlistCategory.CONSIDER
+        assert scoring_service._categorize(74.9) == ShortlistCategory.CONSIDER
+
+    def test_weak_match_below_consider_threshold(self) -> None:
+        assert scoring_service._categorize(44.9) == ShortlistCategory.WEAK_MATCH
+        assert scoring_service._categorize(0.0) == ShortlistCategory.WEAK_MATCH
+
+    def test_none_final_score_stays_uncategorized(self) -> None:
+        assert scoring_service._categorize(None) is None
 
 
 class TestScoreOverallWithSemantic:

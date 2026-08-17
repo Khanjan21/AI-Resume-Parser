@@ -17,12 +17,12 @@ An AI-powered platform with two flows:
 | Database | PostgreSQL 16 + `pgvector` extension (vector storage/search lives in the same DB) |
 | Migrations | Alembic (async env) |
 | Embeddings | `BAAI/bge-small-en-v1.5` via `sentence-transformers`, local CPU inference |
-| LLM | Groq (Llama 3.3 70B), forced tool-calling for structured extraction |
+| LLM | Groq (`openai/gpt-oss-120b`), forced tool-calling for structured extraction |
 | Deployment | Docker + Docker Compose |
 
 ---
 
-## Status — Day 4 complete
+## Status — Day 5 complete
 
 **Day 1** — foundation: job-role catalogue, database, upload pipeline.
 
@@ -105,6 +105,35 @@ mismatched resume (Business Analyst against an AI Engineer role) correctly
 scored 51.5% semantic / 35.5% overall; a custom role created via the API with
 no pre-computed embedding correctly backfilled one on first score.
 
+**Day 5** — candidate ranking and shortlist categories.
+
+- [x] `category`: every scored resume is bucketed into **Strong Match**
+      (`final_score` ≥ 75), **Consider** (≥ 45) or **Weak Match** (below 45) —
+      fixed global thresholds, not per-role, computed right alongside
+      `final_score` in `scoring_service.py`
+- [x] `GET /batches/{id}` now returns resumes **ranked by `final_score`**
+      (descending) instead of upload order; resumes still parsing/scoring (or
+      that failed either step) sort last rather than interrupting the ranking
+- [x] `category_counts` on the batch response (`strong_match` / `consider` /
+      `weak_match` / `unscored`) — a recruiter-facing summary without having
+      to count badges by hand
+- [x] Recruiter UI: a **Ranked results** section (polls until scoring settles,
+      the same pattern the candidate page already used for its own polling)
+      showing the category-counts stat row and a ranked table with
+      color-coded category badges
+
+**Verified end to end in the browser** (Playwright, headless Chromium, real
+backend/Postgres/Groq/BGE — see `docs/screenshots/`): uploaded three resumes
+against the AI Engineer role and watched them settle into 87% Strong Match,
+51% Consider and 23% Weak Match, correctly ranked and color-coded. This also
+surfaced two real, unrelated bugs — see "Design notes":
+1. `POST /resumes/{id}/score` could return a **stale score** in its own
+   response (the DB was updated correctly; only the echoed-back JSON was
+   wrong) — a SQLAlchemy identity-map issue, now fixed and regression-tested.
+2. Groq had decommissioned `llama-3.3-70b-versatile` (the model this project
+   shipped with) — parsing was failing outright. Swapped to
+   `openai/gpt-oss-120b`, verified against the live API.
+
 | Candidate flow | Recruiter flow |
 | --- | --- |
 | ![Candidate upload page](docs/screenshots/candidate.png) | ![Recruiter bulk upload page](docs/screenshots/recruiter.png) |
@@ -117,7 +146,7 @@ no pre-computed embedding correctly backfilled one on first score.
 | 2 | Resume + job-description parsing (PDF/DOCX text, LLM structured extraction) ✅ |
 | 3 | ATS scoring ✅ |
 | 4 | Semantic matching (embeddings via pgvector) ✅ |
-| 5 | Candidate ranking and shortlist categories |
+| 5 | Candidate ranking and shortlist categories ✅ |
 | 6 | RAG, LLM explanations, recruiter AI chat |
 | 7 | Evaluation benchmark, Dockerisation, docs, deployment |
 
@@ -218,7 +247,7 @@ production. A `resume_screening_test` database is created and dropped per run;
 your dev data is never touched.
 
 ```
-174 passed
+181 passed
 ```
 
 Coverage: filename sanitisation, magic-byte sniffing, size limits, storage
@@ -229,8 +258,10 @@ fixture), parsing orchestration (success/failure paths, candidate linking,
 re-parse idempotency), job-description creation and parsing, ATS/skill/experience
 scoring math (parametrised against known inputs), JD-vocabulary merging, a
 schema-level regression test locking in the null-list Groq fix described below,
-semantic-score math and weight blending, embedding-text builders, and the seed
-embedding backfill (idempotent — re-seeding unchanged roles doesn't re-embed them).
+semantic-score math and weight blending, embedding-text builders, the seed
+embedding backfill (idempotent — re-seeding unchanged roles doesn't re-embed them),
+shortlist-category threshold boundaries, and batch ranking/category-counts
+(including that unscored resumes sort last and count separately).
 
 No test ever calls the real Groq API or downloads the real embedding model — a
 `FakeLLMProvider` and `FakeEmbeddingProvider` stand in for both, so the suite
@@ -272,7 +303,7 @@ after, say, editing a role's required skills.
 | --- | --- | --- |
 | `POST` | `/batches` | Create a screening batch for a role (optionally linked to a JD) |
 | `GET` | `/batches` | List batches (filter by role or status) |
-| `GET` | `/batches/{id}` | Batch with its resumes (each including its score) and role |
+| `GET` | `/batches/{id}` | Batch with its resumes — ranked by `final_score` descending — plus `category_counts` and role |
 | `POST` | `/batches/{id}/resumes` | Bulk-upload (multipart `files`, up to 50) — queues parsing + scoring for each |
 | `DELETE` | `/batches/{id}` | Delete the batch and everything in it |
 
@@ -308,7 +339,7 @@ Every parsed resume carries a `score` object once scoring completes:
   ],
   "semantic_score": 93.0,
   "final_score": 77.1,
-  "category": null
+  "category": "strong_match"
 }
 ```
 
@@ -317,8 +348,26 @@ This is a real, unedited result. Note the gap between `ats_score` (25%) and
 but not the literal phrase "Vector Databases", so keyword scanning alone
 penalises a candidate who clearly has the underlying skill. `final_score`
 (77.1%) blends both signals using the role's configured weights, landing on a
-fairer overall number than either alone. `category` is reserved for Day 5's
-Strong Match / Consider / Weak Match bucketing and stays `null` until then.
+fairer overall number than either alone. `category` (Day 5) is one of
+`strong_match` / `consider` / `weak_match`, derived directly from
+`final_score` — see "Design notes" for the thresholds.
+
+A batch's `GET /batches/{id}` response includes a `category_counts` summary
+alongside its (now ranked) `resumes` array:
+
+```json
+{
+  "category_counts": {
+    "strong_match": 4,
+    "consider": 9,
+    "weak_match": 12,
+    "unscored": 2
+  }
+}
+```
+
+`unscored` covers resumes still parsing/scoring, or that failed either step —
+the four counts always add up to the batch's total resume count.
 
 ### Error format
 
@@ -513,6 +562,49 @@ unit-length vectors seeded from a hash of the input text — enough to test that
 quality (that was validated separately, against the real model, in the
 calibration work described above).
 
+**Shortlist thresholds are fixed global constants, not per-role config.**
+`_STRONG_MATCH_THRESHOLD` (75) and `_CONSIDER_THRESHOLD` (45) in
+`scoring_service.py` bucket every role's `final_score` the same way. Nothing
+in the spec called for per-role tuning, and a role's `scoring_weights` already
+gives each role its own notion of what a "good" score looks like before the
+bucket cutoff is even applied — adding a second, per-role knob on top would be
+tuning the same thing twice. These are as reasoned-about-but-unvalidated as
+Day 4's semantic floor/ceiling; Day 7's evaluation benchmark is the place to
+revisit them against real labelled data.
+
+**Ranking sorts scored resumes first, unscored ones last, deterministically.**
+`_rank_key` in `app/api/v1/endpoints/batches.py` returns a tuple —
+`(has_no_score, -final_score, created_at)` — rather than special-casing `None`
+inside a comparator. Resumes with no score yet (still parsing/scoring, or
+failed either step) group at the end, oldest-uploaded first among themselves,
+so a recruiter refreshing mid-batch sees a stable order rather than results
+reshuffling as scores trickle in.
+
+**A stale-score bug in the manual re-score endpoint, caught by driving the UI
+with a real browser, not just curl.** `POST /resumes/{id}/score` loads a
+resume (eager-loading its `.score` relationship), calls `score_resume()` —
+which deliberately opens its *own* database session so it can also run as a
+detached background task — and then re-fetched the resume through the
+*original* session to build the response. SQLAlchemy's identity map doesn't
+overwrite already-loaded relationship data on a plain re-`select()`, so the
+response echoed back the pre-update score even though the database itself was
+updated correctly. Reproduced with a strengthened assertion in
+`test_rescore_recomputes_the_score` (`scored_at >` instead of `>=`, which the
+bug happily satisfied), fixed with a `session.expire_all()` before the
+re-fetch in `app/api/v1/endpoints/resumes.py`.
+
+**Groq decommissioned the model this project shipped with, mid-project.**
+`llama-3.3-70b-versatile` (Day 2's default `GROQ_MODEL`) started returning
+`404 model_not_found` — not a bug in this codebase, but it silently broke
+every real parse/score request. Caught by actually driving the recruiter flow
+in a browser rather than trusting the test suite (which never calls the real
+API). Queried Groq's live `/models` endpoint with the project's own key,
+confirmed `openai/gpt-oss-120b` both exists and honours forced `tool_choice`
+correctly, and made it the new default. If this happens again: any model
+Groq lists as `active: true` that supports tool calling is a candidate — check
+with a direct forced-tool-call request before trusting it, the same way this
+one was checked.
+
 ---
 
 ## Project layout
@@ -524,7 +616,7 @@ calibration work described above).
 ├── backend/
 │   ├── alembic/               # async migration env + versions
 │   ├── scripts/               # sample-resume generator (incl. a hand-rolled valid PDF)
-│   ├── tests/                 # 174 tests against a real Postgres
+│   ├── tests/                 # 181 tests against a real Postgres
 │   └── app/
 │       ├── api/v1/endpoints/  # health, job_roles, resumes, batches, job_descriptions
 │       ├── core/              # settings, logging, error handling, constants.py (EMBEDDING_DIMENSIONS)
@@ -557,12 +649,13 @@ calibration work described above).
 | `job_descriptions` | Recruiter-supplied JDs — `raw_text` + `parsed_data` + `embedding` |
 | `candidates` | People — created/refreshed by resume parsing |
 | `resumes` | Uploaded files — `raw_text` + `parsed_data` + `embedding` |
-| `resume_scores` | One row per resume — ATS/skill/experience/semantic/final scores; `category` (Day 5) still null |
+| `resume_scores` | One row per resume — ATS/skill/experience/semantic/final scores + `category` |
 | `screening_batches` | A recruiter's bulk run; groups resumes for ranking |
 
-`embedding` columns are `vector(384)` (pgvector), populated by Day 4. `category`
-on `resume_scores` is the only column still waiting on its day — Day 5 adds
-logic, not another migration.
+`embedding` columns are `vector(384)` (pgvector), populated by Day 4.
+`category` on `resume_scores` (Day 5) is populated the same way `final_score`
+is — every column on this table was reserved up front back on Day 3 and each
+later day added logic against an existing column, never another migration.
 
 ## Troubleshooting
 
@@ -581,6 +674,14 @@ runs on startup) or run `python -m app.db.seed`.
 silently skipped, not failed — see the note under Quick Start), or the Groq
 free-tier rate limit was hit. Check `parse_error` on the resume once it's
 `failed`, or re-trigger with `POST /resumes/{id}/parse`.
+
+**`parse_error` says `model_not_found` / "The model `...` does not exist or you
+do not have access to it"** — Groq retired the model `GROQ_MODEL` points at
+(this has already happened once — the project shipped with
+`llama-3.3-70b-versatile`, which Groq later decommissioned). List what your key
+can currently use with `client.models.list()` (any `active: true` entry that
+supports tool calling is a candidate), verify it honours forced `tool_choice`
+with a quick direct request, then update `GROQ_MODEL`.
 
 **`parse_error` mentions "tool call validation failed" / "expected array, but
 got null"** — a new field was added to `ParsedResumeData` or

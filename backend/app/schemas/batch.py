@@ -41,6 +41,21 @@ class BatchRead(BaseModel):
     updated_at: datetime
 
 
+class BatchCategoryCounts(BaseModel):
+    """How a batch's resumes split across Day 5's shortlist buckets.
+
+    `unscored` covers resumes still parsing/scoring, or that failed either
+    step — the three category counts plus `unscored` always add up to the
+    batch's total resume count.
+    """
+
+    strong_match: int = 0
+    consider: int = 0
+    weak_match: int = 0
+    unscored: int = 0
+
+
 class BatchDetail(BatchRead):
     job_role: JobRoleSummary | None = None
     resumes: list[ResumeDetail] = []
+    category_counts: BatchCategoryCounts = Field(default_factory=BatchCategoryCounts)

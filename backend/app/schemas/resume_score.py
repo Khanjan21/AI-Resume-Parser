@@ -1,7 +1,7 @@
-"""Resume-score response model.
-
-Day 3 populates everything except `semantic_score` (Day 4) and `final_score` /
-`category` (Day 5), which stay null until those land.
+"""Resume-score response model — null until a resume has been scored at all
+(`Resume.score` is `None`), populated in full on every successful pass:
+`ats_score`/`required_skill_match`/`experience_match` (Day 3), `semantic_score`
+(Day 4), `final_score`/`category` (Day 5).
 """
 
 from __future__ import annotations
@@ -10,6 +10,8 @@ import uuid
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
+
+from app.models.enums import ShortlistCategory
 
 
 class ResumeScoreRead(BaseModel):
@@ -34,6 +36,6 @@ class ResumeScoreRead(BaseModel):
 
     semantic_score: float | None
     final_score: float | None
-    category: str | None
+    category: ShortlistCategory | None
 
     scored_at: datetime
