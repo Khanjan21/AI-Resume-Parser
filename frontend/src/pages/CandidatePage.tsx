@@ -4,6 +4,8 @@ import type { JobRoleSummary, ResumeDetail, ResumeUploadResponse } from '../api/
 import FileDropzone, { formatBytes } from '../components/FileDropzone'
 import RolePicker from '../components/RolePicker'
 
+type JdMode = 'text' | 'file'
+
 const POLL_INTERVAL_MS = 2000
 
 function isTerminal(detail: ResumeDetail): boolean {
@@ -52,6 +54,9 @@ function ScoreHero({ value }: { value: number }) {
 
 export default function CandidatePage() {
   const [role, setRole] = useState<JobRoleSummary | null>(null)
+  const [jdMode, setJdMode] = useState<JdMode>('text')
+  const [jdText, setJdText] = useState('')
+  const [jdFile, setJdFile] = useState<File[]>([])
   const [files, setFiles] = useState<File[]>([])
   const [uploadInfo, setUploadInfo] = useState<{ duplicate: boolean; message: string } | null>(
     null,
@@ -60,6 +65,7 @@ export default function CandidatePage() {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
+  const hasJd = jdMode === 'text' ? jdText.trim().length > 0 : jdFile.length > 0
   const canSubmit = role !== null && files.length === 1 && !submitting
 
   // Polls the resume until parsing (and, if it succeeds, scoring) finishes —
@@ -93,7 +99,22 @@ export default function CandidatePage() {
     setDetail(null)
 
     try {
-      const result: ResumeUploadResponse = await api.uploadResume(role.id, files[0])
+      let jobDescriptionId: string | undefined
+
+      if (hasJd) {
+        const jd = await api.createJobDescription({
+          title: role.title,
+          job_role_id: role.id,
+          ...(jdMode === 'text' ? { raw_text: jdText.trim() } : { file: jdFile[0] }),
+        })
+        jobDescriptionId = jd.id
+      }
+
+      const result: ResumeUploadResponse = await api.uploadResume(
+        role.id,
+        files[0],
+        jobDescriptionId,
+      )
       setUploadInfo({ duplicate: result.duplicate, message: result.message })
       setDetail(await api.getResume(result.resume.id))
     } catch (err) {
@@ -124,7 +145,54 @@ export default function CandidatePage() {
 
       <section className="section">
         <div className="step-label">
-          <span className="step-label__num">2</span> Upload your resume
+          <span className="step-label__num">2</span> Add the job description
+          <span className="muted" style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>
+            {' '}
+            (optional)
+          </span>
+        </div>
+        <div className="card">
+          <p className="muted" style={{ marginTop: 0, fontSize: '0.85rem' }}>
+            Paste the specific posting or upload it as a file to get scored against
+            it directly — without it, you're scored against the role's general
+            skill vocabulary.
+          </p>
+
+          <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.9rem' }}>
+            <button
+              type="button"
+              className={jdMode === 'text' ? 'btn' : 'btn btn--ghost'}
+              onClick={() => setJdMode('text')}
+            >
+              Paste text
+            </button>
+            <button
+              type="button"
+              className={jdMode === 'file' ? 'btn' : 'btn btn--ghost'}
+              onClick={() => setJdMode('file')}
+            >
+              Upload a file
+            </button>
+          </div>
+
+          {jdMode === 'text' ? (
+            <textarea
+              className="input"
+              rows={6}
+              style={{ resize: 'vertical', fontFamily: 'inherit' }}
+              value={jdText}
+              placeholder="Paste the full job description here…"
+              onChange={(event) => setJdText(event.target.value)}
+            />
+          ) : (
+            <FileDropzone files={jdFile} onChange={setJdFile} />
+          )}
+        </div>
+      </section>
+
+      <section className="section">
+        <div className="step-label">
+          <span className="step-label__num">3</span> Upload your resume
         </div>
         <FileDropzone files={files} onChange={setFiles} />
       </section>
@@ -216,6 +284,12 @@ export default function CandidatePage() {
           {score && (
             <div className="card">
               <h2>Your match for {role?.title ?? 'this role'}</h2>
+              {detail.job_description_id && (
+                <p className="muted" style={{ marginTop: '-0.5rem', fontSize: '0.85rem' }}>
+                  Scored against the specific job description you provided, in
+                  addition to the role's general requirements.
+                </p>
+              )}
 
               {score.final_score !== null ? (
                 <ScoreHero value={score.final_score} />

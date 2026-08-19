@@ -21,7 +21,6 @@ from app.models.job_description import JobDescription
 from app.models.job_role import JobRole
 from app.models.resume import Resume
 from app.models.resume_score import ResumeScore
-from app.models.screening_batch import ScreeningBatch
 from app.services.embedding import EmbeddingError, get_embedding_provider
 from app.services.embedding_text import (
     build_job_role_embedding_text,
@@ -251,14 +250,12 @@ def _build_suggestions(
 
 
 async def _resolve_job_description(session, resume: Resume) -> JobDescription | None:
-    """A resume's scoring context comes from its role, plus — if the recruiter
-    linked one — the specific JD its batch is being screened against."""
-    if resume.batch_id is None:
+    """A resume's scoring context comes from its role, plus an optional JD —
+    set directly at upload for a candidate, or denormalised from its batch at
+    ingestion time for a recruiter (`resume_service.ingest_bulk`)."""
+    if resume.job_description_id is None:
         return None
-    batch = await session.get(ScreeningBatch, resume.batch_id)
-    if batch is None or batch.job_description_id is None:
-        return None
-    return await session.get(JobDescription, batch.job_description_id)
+    return await session.get(JobDescription, resume.job_description_id)
 
 
 async def _compute_semantic_score(

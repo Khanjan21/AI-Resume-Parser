@@ -62,6 +62,30 @@ class TestScoreOnResumeDetail:
         assert detail["score"] is None
 
 
+class TestCandidateScoringWithJobDescription:
+    async def test_candidate_upload_is_scored_against_its_linked_jd(
+        self, client: AsyncClient, ai_role_id: str, fake_llm: FakeLLMProvider
+    ) -> None:
+        jd = await client.post(
+            "/api/v1/job-descriptions",
+            data={"title": "AI Engineer", "raw_text": "Need Kubernetes experience."},
+        )
+        fake_llm.response = ParsedJobDescriptionData(required_skills=["Kubernetes"])
+        reparsed = await client.post(f"/api/v1/job-descriptions/{jd.json()['id']}/parse")
+        jd_id = reparsed.json()["id"]
+
+        fake_llm.response = ParsedResumeData(skills=["Python"])  # no Kubernetes
+        upload = await client.post(
+            "/api/v1/resumes",
+            data={"job_role_id": ai_role_id, "job_description_id": jd_id},
+            files={"file": ("with_jd.txt", b"resume content", "text/plain")},
+        )
+
+        detail = (await client.get(f"/api/v1/resumes/{upload.json()['resume']['id']}")).json()
+        assert detail["job_description_id"] == jd_id
+        assert "Kubernetes" in detail["score"]["missing_skills"]
+
+
 class TestManualRescore:
     async def test_rescore_recomputes_the_score(
         self, client: AsyncClient, ai_role_id: str, fake_llm: FakeLLMProvider

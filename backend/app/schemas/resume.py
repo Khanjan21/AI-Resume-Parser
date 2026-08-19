@@ -19,6 +19,7 @@ class ResumeRead(BaseModel):
     job_role_id: uuid.UUID | None
     batch_id: uuid.UUID | None
     candidate_id: uuid.UUID | None
+    job_description_id: uuid.UUID | None
     upload_source: UploadSource
 
     original_filename: str

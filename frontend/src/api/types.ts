@@ -54,6 +54,7 @@ export interface Resume {
   job_role_id: string | null
   batch_id: string | null
   candidate_id: string | null
+  job_description_id: string | null
   upload_source: UploadSource
   original_filename: string
   file_extension: string

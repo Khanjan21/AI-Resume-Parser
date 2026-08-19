@@ -53,10 +53,11 @@ export const api = {
 
   getJobRole: (ref: string) => request<JobRoleDetail>(`/job-roles/${ref}`),
 
-  uploadResume: (jobRoleId: string, file: File) => {
+  uploadResume: (jobRoleId: string, file: File, jobDescriptionId?: string) => {
     const form = new FormData()
     form.append('job_role_id', jobRoleId)
     form.append('file', file)
+    if (jobDescriptionId) form.append('job_description_id', jobDescriptionId)
     return request<ResumeUploadResponse>('/resumes', { method: 'POST', body: form })
   },
 

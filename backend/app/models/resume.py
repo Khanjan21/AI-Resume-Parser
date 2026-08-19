@@ -26,6 +26,7 @@ from app.models.enums import AnalysisStatus, ParseStatus, UploadSource
 
 if TYPE_CHECKING:
     from app.models.candidate import Candidate
+    from app.models.job_description import JobDescription
     from app.models.job_role import JobRole
     from app.models.resume_score import ResumeScore
     from app.models.screening_batch import ScreeningBatch
@@ -62,6 +63,19 @@ class Resume(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     batch_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("screening_batches.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    # Optional specific JD to score this resume against, in addition to its
+    # role's general vocabulary. Candidate uploads set this directly (a
+    # candidate has no batch to hang it off of); recruiter uploads inherit it
+    # from their batch's own `job_description_id` at ingestion time — see
+    # `resume_service.ingest_bulk`. Denormalised here (rather than resolved
+    # via batch -> job_description at scoring time) so both flows share one
+    # code path.
+    job_description_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("job_descriptions.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -107,6 +121,7 @@ class Resume(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     candidate: Mapped["Candidate | None"] = relationship(back_populates="resumes")
     job_role: Mapped["JobRole | None"] = relationship(back_populates="resumes")
     batch: Mapped["ScreeningBatch | None"] = relationship(back_populates="resumes")
+    job_description: Mapped["JobDescription | None"] = relationship()
     score: Mapped["ResumeScore | None"] = relationship(
         back_populates="resume", uselist=False, cascade="all, delete-orphan"
     )

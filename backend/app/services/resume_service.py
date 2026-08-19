@@ -26,17 +26,25 @@ async def find_duplicate(
     content_hash: str,
     job_role_id: uuid.UUID | None,
     batch_id: uuid.UUID | None,
+    job_description_id: uuid.UUID | None = None,
 ) -> Resume | None:
     """Look for an identical file already ingested in the same scope.
 
-    Scope is the batch for recruiter uploads, and the job role for candidate
-    uploads — the same CV against a different role is a legitimate new upload.
+    Scope is the batch for recruiter uploads (a batch's JD, if any, is fixed
+    for every resume in it, so it adds nothing to the scope). For candidate
+    uploads, scope is the job role *and* the optional JD — the same CV
+    against a different role, or the same role but a different specific JD,
+    is a legitimate new upload, not a duplicate of the first.
     """
     stmt = select(Resume).where(Resume.content_hash == content_hash)
     if batch_id is not None:
         stmt = stmt.where(Resume.batch_id == batch_id)
     else:
-        stmt = stmt.where(Resume.batch_id.is_(None), Resume.job_role_id == job_role_id)
+        stmt = stmt.where(
+            Resume.batch_id.is_(None),
+            Resume.job_role_id == job_role_id,
+            Resume.job_description_id == job_description_id,
+        )
     return (await session.execute(stmt.limit(1))).scalar_one_or_none()
 
 
@@ -47,6 +55,7 @@ async def ingest_resume(
     job_role_id: uuid.UUID | None,
     upload_source: UploadSource,
     batch_id: uuid.UUID | None = None,
+    job_description_id: uuid.UUID | None = None,
 ) -> tuple[Resume, bool]:
     """Ingest one file. Returns (resume, was_duplicate).
 
@@ -61,6 +70,7 @@ async def ingest_resume(
         content_hash=content_hash,
         job_role_id=job_role_id,
         batch_id=batch_id,
+        job_description_id=job_description_id,
     )
     if existing is not None:
         logger.info("Duplicate upload ignored: %s", validated.original_filename)
@@ -73,6 +83,7 @@ async def ingest_resume(
     resume = Resume(
         job_role_id=job_role_id,
         batch_id=batch_id,
+        job_description_id=job_description_id,
         upload_source=upload_source,
         original_filename=validated.original_filename,
         stored_filename=stored_filename,
@@ -105,6 +116,7 @@ async def ingest_bulk(
                 job_role_id=batch.job_role_id,
                 upload_source=UploadSource.RECRUITER,
                 batch_id=batch.id,
+                job_description_id=batch.job_description_id,
             )
             results.append(
                 BulkUploadItem(

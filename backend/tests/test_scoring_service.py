@@ -45,11 +45,13 @@ async def _make_role(
 
 
 async def _make_resume(
-    session, *, role: JobRole, raw_text: str, parsed_data: dict, batch_id=None
+    session, *, role: JobRole, raw_text: str, parsed_data: dict, batch_id=None,
+    job_description_id=None,
 ) -> Resume:
     resume = Resume(
         job_role_id=role.id,
         batch_id=batch_id,
+        job_description_id=job_description_id,
         upload_source="candidate",
         original_filename="cv.txt",
         stored_filename="x.txt",
@@ -438,6 +440,7 @@ class TestSemanticScoreIntegration:
             raw_text="x",
             parsed_data={"skills": ["Python"], "summary": "profile"},
             batch_id=batch.id,
+            job_description_id=jd.id,
         )
 
         await scoring_service.score_resume(resume.id)
@@ -552,6 +555,7 @@ class TestJobDescriptionMerge:
             raw_text="x",
             parsed_data={"skills": ["Python"]},
             batch_id=batch.id,
+            job_description_id=jd.id,
         )
 
         await scoring_service.score_resume(resume.id)

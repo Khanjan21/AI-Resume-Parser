@@ -108,6 +108,92 @@ class TestCandidateUpload:
         assert response.status_code == 404
 
 
+class TestCandidateUploadWithJobDescription:
+    """A candidate has no batch to hang a JD off of, so `job_description_id`
+    is accepted directly on the upload — same optional-JD idea as the
+    recruiter flow, just linked to the resume instead of a batch."""
+
+    async def _jd(self, client: AsyncClient, raw_text: str) -> str:
+        response = await client.post(
+            "/api/v1/job-descriptions",
+            data={"title": "AI Engineer", "raw_text": raw_text},
+        )
+        return response.json()["id"]
+
+    async def test_links_the_jd_to_the_resume(
+        self, client: AsyncClient, ai_role_id: str, resume_txt
+    ) -> None:
+        jd_id = await self._jd(client, "Need strong Kubernetes experience.")
+
+        response = await client.post(
+            "/api/v1/resumes",
+            data={"job_role_id": ai_role_id, "job_description_id": jd_id},
+            files=file_payload(*resume_txt),
+        )
+        assert response.status_code == 201
+        assert response.json()["resume"]["job_description_id"] == jd_id
+
+    async def test_rejects_unknown_job_description(
+        self, client: AsyncClient, ai_role_id: str, resume_txt
+    ) -> None:
+        response = await client.post(
+            "/api/v1/resumes",
+            data={"job_role_id": ai_role_id, "job_description_id": str(uuid.uuid4())},
+            files=file_payload(*resume_txt),
+        )
+        assert response.status_code == 404
+
+    async def test_same_file_same_role_different_jd_is_not_a_duplicate(
+        self, client: AsyncClient, ai_role_id: str, resume_txt
+    ) -> None:
+        jd_a = await self._jd(client, "Need Kubernetes.")
+        jd_b = await self._jd(client, "Need Terraform.")
+
+        first = await client.post(
+            "/api/v1/resumes",
+            data={"job_role_id": ai_role_id, "job_description_id": jd_a},
+            files=file_payload(*resume_txt),
+        )
+        second = await client.post(
+            "/api/v1/resumes",
+            data={"job_role_id": ai_role_id, "job_description_id": jd_b},
+            files=file_payload(*resume_txt),
+        )
+
+        assert second.json()["duplicate"] is False
+        assert second.json()["resume"]["id"] != first.json()["resume"]["id"]
+
+    async def test_same_file_same_role_same_jd_is_a_duplicate(
+        self, client: AsyncClient, ai_role_id: str, resume_txt
+    ) -> None:
+        jd_id = await self._jd(client, "Need Kubernetes.")
+
+        first = await client.post(
+            "/api/v1/resumes",
+            data={"job_role_id": ai_role_id, "job_description_id": jd_id},
+            files=file_payload(*resume_txt),
+        )
+        second = await client.post(
+            "/api/v1/resumes",
+            data={"job_role_id": ai_role_id, "job_description_id": jd_id},
+            files=file_payload(*resume_txt),
+        )
+
+        assert second.json()["duplicate"] is True
+        assert second.json()["resume"]["id"] == first.json()["resume"]["id"]
+
+    async def test_omitting_the_jd_still_works_as_before(
+        self, client: AsyncClient, ai_role_id: str, resume_txt
+    ) -> None:
+        response = await client.post(
+            "/api/v1/resumes",
+            data={"job_role_id": ai_role_id},
+            files=file_payload(*resume_txt),
+        )
+        assert response.status_code == 201
+        assert response.json()["resume"]["job_description_id"] is None
+
+
 class TestResumeRetrieval:
     async def test_lists_and_filters_resumes(
         self, client: AsyncClient, ai_role_id: str, resume_txt

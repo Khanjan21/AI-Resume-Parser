@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from app.api.deps import (
     DbSession,
     PaginationDep,
+    get_job_description_or_404,
     get_job_role_or_404,
     get_resume_or_404,
 )
@@ -44,13 +45,24 @@ async def upload_resume(
     background_tasks: BackgroundTasks,
     job_role_id: uuid.UUID = Form(..., description="Target job role"),
     file: UploadFile = File(..., description="PDF, DOCX, TXT or MD, max 10 MB"),
+    job_description_id: uuid.UUID | None = Form(
+        default=None,
+        description=(
+            "Optional specific JD to score this resume against, in addition "
+            "to the role's general vocabulary — create one via POST "
+            "/job-descriptions first, then pass its id here."
+        ),
+    ),
 ) -> ResumeUploadResponse:
     """Stores the file and queues it for parsing.
 
-    Re-uploading the same bytes for the same role returns the existing record
-    instead of creating a second copy (and is not re-queued for parsing).
+    Re-uploading the same bytes for the same role (and the same optional JD)
+    returns the existing record instead of creating a second copy (and is not
+    re-queued for parsing).
     """
     await get_job_role_or_404(session, job_role_id)
+    if job_description_id is not None:
+        await get_job_description_or_404(session, job_description_id)
 
     try:
         resume, duplicate = await resume_service.ingest_resume(
@@ -58,6 +70,7 @@ async def upload_resume(
             file=file,
             job_role_id=job_role_id,
             upload_source=UploadSource.CANDIDATE,
+            job_description_id=job_description_id,
         )
     finally:
         await file.close()
